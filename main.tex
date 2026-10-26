@@ -1,47 +1,287 @@
-
-\documentclass[11pt]{article}
+% Compilacao: pdflatex proposta_benchmark_preempt_rt.tex (duas vezes).
+% Arquivo autocontido; nao requer imagens externas nem BibTeX.
+\documentclass[11pt,a4paper]{article}
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
-\usepackage[a4paper,margin=2.5cm]{geometry}
-\usepackage{parskip}     
-\usepackage{graphicx}
-\usepackage{titlesec}
-\usepackage{lmodern}     
-\usepackage{enumitem}   
-
-\titleformat{\section}{\bfseries\large}{\thesection}{1em}{}
-\titleformat{\subsection}{\bfseries}{\thesubsection}{1em}{}
-
-\title{\textbf{Project Title Placeholder}}
-\author{Author Name \\ \small Institution or Team Name}
-\date{\today}
-
+\usepackage{lmodern}
+\IfFileExists{brazil.ldf}{\usepackage[brazil]{babel}}{
+  \usepackage{babel}
+  \babelprovide[main,import=pt]{brazil}
+}
+\usepackage{geometry}
+\geometry{margin=2.4cm}
+\usepackage{microtype}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs,tabularx,array}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{listings}
+\usepackage{hyperref}
+\hypersetup{colorlinks=true,linkcolor=blue!45!black,urlcolor=blue!45!black,citecolor=blue!45!black,pdftitle={Protocolo experimental: Linux e PREEMPT RT},pdfauthor={}}
+\setlength{\emergencystretch}{3em}
+\setlength{\parskip}{0.4em}
+\setlength{\parindent}{0pt}
+\setlist{nosep,leftmargin=*}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\lstset{basicstyle=\ttfamily\small,breaklines=true,frame=single,columns=fullflexible,keepspaces=true,showstringspaces=false}
+\newcommand{\us}{\ensuremath{\,\mu\mathrm{s}}}
+\title{Avaliação de tempos de resposta e cumprimento de deadlines em Linux convencional e PREEMPT\_RT\\[0.4em]\large Proposta de trabalho e protocolo experimental}
+\author{Disciplina de Sistemas Embarcados}
+\date{26 de outubro de 2026}
 \begin{document}
-
 \maketitle
+\begin{abstract}
+Este trabalho propõe comparar o atendimento de solicitações externas em uma Raspberry Pi executando Linux sem PREEMPT\_RT e Linux com PREEMPT\_RT. Um ESP32 oferece solicitações periódicas, sinaliza aquelas admitidas por GPIO e mede o intervalo até a resposta da Raspberry, após uma computação de tamanho fixo. O benchmark será executado com as políticas SCHED\_OTHER e SCHED\_FIFO, sob interferência de CPU e memória produzida pelo stress-ng. O protocolo contém seis execuções principais: quatro combinações de kernel e política sob interferência e duas referências FIFO sem carga adicional. A análise utilizará CCDFs empíricas, percentis, máximo observado e falhas de atendimento ao deadline. O estudo terá caráter exploratório e não estabelecerá garantias formais de pior caso.
+\end{abstract}
+\setcounter{tocdepth}{1}
+{\small\setlength{\parskip}{0pt}\tableofcontents}
+\newpage
 
-\section{Introduction}
+\section{Problema e delimitação}
+Sistemas embarcados que utilizam Linux podem precisar atender eventos externos dentro de um prazo, mesmo durante a execução de outras aplicações. Uma baixa latência média não implica que todos os atendimentos terminem no prazo: atrasos raros podem ser determinantes para a aplicação.
 
-This document provides a brief overview of the project. Here, you can describe the motivation, context, and general objectives. Keep it short and focused.
+A proposta é estudar uma tarefa de atendimento acionada por GPIO, com processamento definido e resposta observável externamente. O foco é o efeito combinado da configuração de preempção do kernel e da política de escalonamento sobre a distribuição dos tempos de resposta.
 
-\section{Goals}
+\textbf{Pergunta de pesquisa:} sob interferência de CPU e memória, como PREEMPT\_RT e as políticas SCHED\_OTHER e SCHED\_FIFO afetam os tempos de resposta e o cumprimento de deadlines no atendimento de solicitações externas periódicas?
 
-\begin{itemize}[leftmargin=1.5em]
-  \item Define a clear purpose for the project.
-  \item Establish milestones or deliverables.
-  \item Identify the target audience or users.
+O escopo inclui uma Raspberry Pi, um ESP32, uma tarefa de atendimento, um período, um deadline e um tamanho de processamento. Xenomai, comunicação sem fio, SPI, múltiplas tarefas críticas e exploração de várias prioridades ficam fora do escopo. Os números iniciais deste documento são parâmetros propostos, não resultados medidos.
+
+\section{Objetivos e hipóteses}
+\subsection{Objetivo geral}
+Avaliar experimentalmente o efeito de PREEMPT\_RT e da política de escalonamento sobre o atendimento de solicitações externas sob interferência controlada.
+
+\subsection{Objetivos específicos}
+\begin{enumerate}
+\item Implementar geração de solicitações e medição externa com ESP32.
+\item Implementar o mesmo processamento em C ou C++ nos dois kernels.
+\item Executar a thread de atendimento em SCHED\_OTHER e SCHED\_FIFO.
+\item Produzir interferência reproduzível de CPU e memória com stress-ng.
+\item Comparar CCDFs, percentis e taxas de falha em seis execuções principais.
+\item Documentar as limitações da medição e da ausência de repetições por condição.
+\end{enumerate}
+
+As hipóteses exploratórias são: (H1) FIFO reduz atrasos em relação a SCHED\_OTHER sob a mesma interferência; (H2) PREEMPT\_RT reduz a cauda dos tempos de resposta, especialmente em combinação com FIFO; e (H3) a interferência degrada o atendimento FIFO em magnitude dependente do kernel. Diferenças pequenas, ausência de ganho ou inversões na ordenação também são resultados válidos.
+
+\section{Ambientes de execução}
+\subsection{Configuração do kernel}
+Serão utilizados Linux com PREEMPT\_RT desabilitado e Linux com PREEMPT\_RT habilitado, preferencialmente derivados da mesma versão-base e da mesma árvore de fontes. Devem ser preservados sistema de arquivos, bibliotecas, compilador e configurações não relacionadas ao tratamento experimental, sempre que possível.
+
+O termo ``Linux convencional'' designa a configuração sem PREEMPT\_RT; o modelo de preempção efetivamente utilizado deverá constar no relatório. Não basta registrar apenas ``vanilla''. PREEMPT\_RT modifica mecanismos como travas e tratamento de interrupções, permitindo maior preempção em caminhos relevantes para a latência~\cite{rt-theory}.
+
+Se não for possível utilizar a mesma versão-base, a diferença deverá ser explicitada como fator de confusão. Devem ser arquivados os arquivos de configuração dos kernels e suas versões completas.
+
+\subsection{Políticas de escalonamento}
+A comparação usará SCHED\_OTHER com nice 0 e SCHED\_FIFO com prioridade fixa. A expressão CFS poderá aparecer apenas se corresponder à implementação da versão escolhida. Em kernels recentes, a classe normal utiliza EEVDF; portanto, o nome operacional usado neste protocolo é SCHED\_OTHER~\cite{eevdf}.
+
+A prioridade FIFO inicial proposta é 40. Ela será confirmada no piloto após inspeção das prioridades das threads de IRQ do GPIO no PREEMPT\_RT. A intenção é evitar que a thread de aplicação impeça o progresso da thread de IRQ necessária ao próprio atendimento. A prioridade final será idêntica nas duas execuções FIFO de cada cenário e ficará congelada antes da coleta principal.
+
+A aplicação deverá conferir se a política e a afinidade foram aplicadas à \emph{thread de atendimento}, registrar falhas e abortar se a configuração não corresponder ao tratamento. A tarefa deverá bloquear aguardando o GPIO; não será usado polling contínuo.
+
+\section{Arquitetura e processamento}
+\subsection{Componentes e ligações}
+\begin{center}
+\begin{tabularx}{\textwidth}{lY}
+\toprule
+Componente & Responsabilidade \\
+\midrule
+ESP32 & Manter calendário de solicitações, sinalizar admissões, capturar respostas e armazenar dados. \\
+Raspberry Pi & Aguardar evento GPIO, executar processamento e sinalizar conclusão. \\
+REQ & Saída do ESP32 conectada à entrada GPIO da Raspberry. \\
+ACK & Saída da Raspberry conectada à entrada GPIO do ESP32. \\
+GND & Referência elétrica comum entre as placas. \\
+Analisador lógico & Validação opcional dos intervalos entre transições de REQ e ACK. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+Utilizar sinais compatíveis com 3,3 V e registrar os modelos exatos das placas, pinos e esquema de ligação. O caminho de GPIO deve ser o mesmo nos dois kernels, preferencialmente pela interface de dispositivo de caracteres e uma versão fixa da libgpiod. Os mecanismos de solicitação de linhas, captura de eventos e buffers serão documentados.
+
+\subsection{Computação da Raspberry}
+A thread aguarda uma transição de REQ, executa uma computação com número fixo de operações e atualiza ACK. Propõe-se um filtro FIR com coeficientes e amostras previamente alocados. O número de amostras e coeficientes será escolhido no piloto, visando inicialmente algumas dezenas de microssegundos de processamento na placa utilizada.
+
+O tamanho será calibrado uma única vez e mantido em todas as condições; não será recalibrado por kernel. O resultado deverá contribuir para um checksum ou saída observável, impedindo eliminação da computação pelo compilador. A implementação deve evitar comportamento indefinido e usar as mesmas opções de otimização.
+
+Não usar sleep, espera ocupada baseada em relógio ou laço de duração variável como substituto da computação. Não alocar memória, imprimir mensagens ou escrever arquivos no caminho crítico. As páginas de memória serão previamente tocadas e bloqueadas com mlockall, verificando o sucesso da operação.
+
+\section{Modelo temporal e protocolo de associação}
+\subsection{Período, deadline e oferta}
+O ESP32 manterá instantes de oferta definidos por
+\begin{equation}
+ a_i=a_0+iT,\qquad i=0,\ldots,N-1,
+\end{equation}
+com período $T$ e deadline relativo $D<T$. Os valores iniciais propostos são $T=1$ ms e $D=500\us$. O piloto deverá confirmar sua adequação ao propósito da aplicação simulada. Os valores finais serão fixados antes das seis execuções.
+
+A thread da Raspberry é \textbf{acionada por eventos}; não é uma tarefa que acorda periodicamente para consultar uma entrada. A periodicidade pertence ao calendário de oferta do ESP32.
+
+\subsection{Uma solicitação em voo e descarte explícito por ocupação}
+Com apenas dois sinais e sem identificadores transmitidos, permitir várias solicitações pendentes dificulta associar respostas, especialmente se eventos forem perdidos. Para manter a implementação simples e a medição inequívoca, este protocolo admite \textbf{no máximo uma solicitação em voo}.
+
+REQ e ACK usam alternância de nível: iniciam em zero; para admitir uma solicitação, o ESP32 inverte REQ. Ao concluir o processamento, a Raspberry atualiza ACK para o nível recebido de REQ. Uma transição correspondente de ACK encerra o atendimento. Essa alternância evita pulsos de ACK excessivamente curtos.
+
+Em cada instante $a_i$:
+\begin{enumerate}
+\item Se não há solicitação pendente, registrar o timestamp, inverter REQ e abrir um registro de atendimento.
+\item Se há solicitação pendente, registrar a oferta $i$ como \texttt{nao\_admitida\_ocupado}, sem emitir nova transição. O calendário continua avançando normalmente.
+\item Quando ACK chegar, associá-lo à única solicitação pendente, registrar o tempo e liberar o canal para o próximo instante de oferta.
+\end{enumerate}
+
+\textbf{Esta escolha é uma política de descarte por ocupação, não um fluxo de eventos físicos estritamente periódico sob sobrecarga.} As ofertas continuam periódicas, mas uma oferta pode não ser admitida. Todas essas ocorrências entram na taxa global de falha. Assim, o gerador não reduz silenciosamente o denominador nem desloca os próximos instantes para esperar por ACK.
+
+Uma solicitação atrasada continua pendente após $D$, pois um ACK tardio precisa ser associado corretamente. Não emitir uma nova solicitação apenas porque o deadline expirou. Caso a resposta nunca chegue, as ofertas seguintes serão descartadas por ocupação, caracterizando indisponibilidade persistente. Após a última oferta, aguardar uma janela final fixa $G$, inicialmente 1 s, para registrar eventual ACK tardio; depois, classificar o atendimento ainda pendente como censurado/sem resposta até o encerramento. Não reinicializar o protocolo durante uma execução.
+
+Para estudar filas ou geração física incondicional de eventos, seria necessário outro protocolo com identificadores e controle explícito de buffers. Essa extensão fica fora deste trabalho.
+
+\subsection{Tempo observado e erro de instrumentação}
+Para uma solicitação admitida com resposta, o ESP32 calcula
+\begin{equation}
+ R_i^{\mathrm{obs}}=t_{\mathrm{ACK},i}^{\mathrm{ESP}}-t_{\mathrm{REQ},i}^{\mathrm{ESP}}.
+\end{equation}
+Os timestamps usam o mesmo relógio; não é necessária sincronização entre placas. O intervalo inclui emissão de REQ, recepção e despertar na Raspberry, processamento, emissão de ACK e captura no ESP32. Não representa exclusivamente latência do escalonador.
+
+Com captura por software, registrar $t_{\mathrm{REQ}}$ imediatamente antes de alterar REQ e $t_{\mathrm{ACK}}$ no início da rotina de atendimento de ACK. A medida inclui o atraso entre a leitura do relógio e a mudança física de REQ, assim como a latência da interrupção de ACK no ESP32. Preferir captura por hardware quando suportada pelo modelo escolhido; sua disponibilidade não é pressuposta.
+
+Registrar resolução, frequência e largura do contador, tratamento de overflow e a ordem das operações. Desabilitar Wi-Fi e Bluetooth no ESP32 e evitar saída serial no caminho de medição. Validar o mecanismo por loopback e, quando disponível, por analisador lógico capturando REQ e ACK simultaneamente. Relatar viés e dispersão observados; não subtrair arbitrariamente uma constante das amostras. Sem validação externa, declarar que a latência da instrumentação não foi separada da resposta do sistema.
+
+\section{Carga concorrente com stress-ng}
+Será empregado apenas um perfil de interferência: \textbf{CPU e memória simultaneamente}. O stress-ng permanecerá em SCHED\_OTHER, nice 0, em todas as execuções com carga. Apenas a política do benchmark varia. A versão e os parâmetros do stress-ng serão mantidos constantes~\cite{stressng}.
+
+Exemplo para uma placa com quatro núcleos e RAM suficiente:
+\begin{lstlisting}
+stress-ng --cpu 4 --cpu-method sqrt \
+  --vm 1 --vm-bytes 256M --vm-keep \
+  --timeout 20m --metrics-brief
+\end{lstlisting}
+
+O comando é uma configuração inicial. Confirmar flags na versão instalada, RAM disponível e ausência de swapping no piloto. O tamanho de 256 MiB será ajustado se necessário e congelado. A carga deve começar antes da janela medida e continuar até seu término; o timeout precisa cobrir aquecimento, coleta e janela final.
+
+Fixar a thread de atendimento em um núcleo previamente escolhido. Permitir que os workers do stress-ng executem em todos os núcleos, incluindo esse núcleo, com um worker de CPU por núcleo disponível. Não isolar o núcleo crítico da carga neste estudo. Registrar afinidade de IRQs e threads; manter a mesma política de afinidade entre tratamentos, documentando diferenças próprias do PREEMPT\_RT.
+
+O perfil solicita trabalho concorrente reproduzível, mas não garante a mesma banda efetiva de memória ou percentual exato de CPU em todos os ambientes. As métricas do stress-ng servem para caracterizar a interferência, não substituem as métricas temporais do benchmark.
+
+\section{Matriz de seis execuções}
+\begin{center}
+\begin{tabularx}{\textwidth}{cllY}
+\toprule
+ID & Kernel & Política & Interferência \\
+\midrule
+E1 & Sem PREEMPT\_RT & SCHED\_OTHER & CPU + memória \\
+E2 & Sem PREEMPT\_RT & SCHED\_FIFO & CPU + memória \\
+E3 & Com PREEMPT\_RT & SCHED\_OTHER & CPU + memória \\
+E4 & Com PREEMPT\_RT & SCHED\_FIFO & CPU + memória \\
+E5 & Sem PREEMPT\_RT & SCHED\_FIFO & Sem stress-ng \\
+E6 & Com PREEMPT\_RT & SCHED\_FIFO & Sem stress-ng \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+Há uma execução principal por condição. E1--E4 permitem comparar kernel e política sob interferência. E2/E5 e E4/E6 permitem observar o efeito da carga nas configurações FIFO. Não há referência SCHED\_OTHER sem stress; portanto, o desenho não permite estimar o efeito completo da interação kernel, política e carga.
+
+Propõe-se $N=10^6$ ofertas por execução. Para $T=1$ ms, cada janela de oferta dura aproximadamente 16 minutos e 40 segundos, totalizando cerca de 100 minutos de coleta principal, além de aquecimento, inicialização e troca de kernel. O número de respostas válidas pode ser menor que $N$.
+
+Aquecimento proposto: 30 s com o perfil correspondente já ativo. Sortear previamente a ordem das seis condições e registrar o resultado; os IDs não determinam a ordem. Ensaios curtos de configuração, calibração e depuração pertencem ao piloto e não integram as seis execuções principais.
+
+\section{Procedimento de execução}
+\begin{enumerate}
+\item Identificar placa, kernel e configuração; confirmar modelo de preempção.
+\item Aplicar as configurações fixas de frequência, afinidade e serviços. Registrar temperatura e throttling. Usar alimentação e refrigeração estáveis.
+\item Iniciar a aplicação e verificar memória bloqueada, política, prioridade e linhas GPIO. Confirmar que REQ e ACK estão no estado inicial acordado.
+\item Para cenários carregados, iniciar stress-ng em SCHED\_OTHER e confirmar workers e afinidade. Para referências, manter os mesmos serviços, retirando apenas stress-ng.
+\item Realizar o aquecimento. O protocolo de medição deve estar pronto antes da primeira oferta válida.
+\item Iniciar o calendário absoluto de $N$ ofertas e armazenar eventos, admissões, ACKs e falhas.
+\item Encerrar as ofertas, aguardar $G$ e fechar a coleta. Exportar os dados e logs após a janela crítica.
+\item Verificar integridade: número de ofertas, associação de ACKs, overflow de buffers, política efetiva, duração e continuidade do stress-ng.
+\end{enumerate}
+
+Uma execução com perda de dados na instrumentação, troca incorreta de política ou interrupção prematura do stress-ng é inválida, não um resultado temporal válido. Sob limite rígido de seis tentativas totais, reportar a condição inválida como ausente; não substituir silenciosamente nem inventar resultados. Idealmente, o piloto deve eliminar esses problemas antes da campanha.
+
+A instrumentação não deve exigir que um milhão de registros caibam na RAM interna do ESP32. Dimensionar o armazenamento para a placa: usar PSRAM, captura por periféricos ou buffers em blocos drenados por tarefa de baixa prioridade. Validar que a transferência não prejudica o gerador. Contabilizar overflow; nunca descartá-lo silenciosamente.
+
+\section{Dados e métricas}
+\subsection{Registros mínimos}
+Cada oferta deve conter: ID da execução, índice da oferta, instante previsto, instante efetivo de emissão quando admitida, timestamp de ACK quando presente, tempo observado, estado final e indicador de atraso do próprio gerador. Instantes efetivos permitem detectar jitter de emissão do ESP32.
+
+Os estados finais mutuamente exclusivos são: \texttt{no\_prazo}, \texttt{atrasada}, \texttt{nao\_admitida\_ocupado} e \texttt{sem\_resposta\_ao\_encerrar}. Informações de integridade, como overflow de buffers e ACK inesperado, ficam em campos separados. Se o ESP32 perder um instante de oferta, registrar falha do gerador e avaliar a validade do ensaio, sem atribuí-la automaticamente ao kernel.
+
+O deadline principal será referido à solicitação efetivamente emitida. O jitter entre emissão e instante previsto deverá ser analisado separadamente; não se deve ocultar um gerador irregular sob o rótulo de estímulo periódico.
+
+\subsection{Taxa global de falha}
+Sejam $N_{\mathrm{ok}}$, $N_{\mathrm{late}}$, $N_{\mathrm{busy}}$ e $N_{\mathrm{nr}}$ os totais dos quatro estados. Para uma execução válida,
+\begin{equation}
+ N=N_{\mathrm{ok}}+N_{\mathrm{late}}+N_{\mathrm{busy}}+N_{\mathrm{nr}}.
+\end{equation}
+A taxa global de falha de atendimento é
+\begin{equation}
+ \widehat p_{\mathrm{falha}}=
+ \frac{N_{\mathrm{late}}+N_{\mathrm{busy}}+N_{\mathrm{nr}}}{N}
+ =1-\frac{N_{\mathrm{ok}}}{N}.
+\end{equation}
+As três parcelas de falha devem ser mostradas separadamente. A perda de prazo entre solicitações respondidas não deve ser confundida com essa taxa global.
+
+\subsection{CCDF e estatísticas de resposta}
+Seja $\mathcal{V}$ o conjunto de solicitações admitidas com resposta observada até o encerramento. A CCDF empírica condicional é
+\begin{equation}
+ \widehat{\overline F}_{\mathrm{resp}}(x)=
+ \frac{1}{|\mathcal{V}|}\sum_{i\in\mathcal{V}}
+ \mathbf{1}\{R_i^{\mathrm{obs}}>x\}.
+\end{equation}
+Ela representa a fração das respostas medidas que excede $x$. Em $x=D$, fornece a fração de atrasos \emph{entre respostas observadas}; não inclui ofertas recusadas ou respostas censuradas. Logo, sempre apresentar a CCDF juntamente com a taxa global de falha e $|\mathcal{V}|/N$.
+
+Usar eixo horizontal em microssegundos e eixo vertical logarítmico. Desenhar a curva como distribuição empírica, sem ajuste de cauda não justificado. Probabilidades nulas não são exibíveis em escala logarítmica; não substituir zero por um valor arbitrário. Com $n$ respostas, a menor probabilidade empírica não nula é $1/n$, o que não é garantia de precisão nessa região.
+
+Calcular mediana, p99, p99,9 e máximo observado somente para respostas válidas, informando o denominador. Se houver poucas respostas, qualificar a instabilidade dos percentis extremos. O máximo observado não é WCET e ausência de falhas não prova probabilidade de falha nula.
+
+\section{Análise e apresentação}
+Serão produzidos:
+\begin{enumerate}
+\item \textbf{CCDF principal}: quatro curvas, E1--E4, comparando kernel e política sob interferência.
+\item \textbf{CCDF complementar}: E2, E4, E5 e E6, comparando FIFO com e sem interferência nos dois kernels.
+\item \textbf{Tabela das seis execuções}: ofertas, respostas, mediana, p99, p99,9, máximo, atrasos, recusas por ocupação, censura e taxa global de falha.
+\item \textbf{Diagnóstico temporal}: temperatura, frequência, flags de throttling e jitter do gerador, na granularidade disponível.
+\end{enumerate}
+
+Manter escalas comparáveis, unidades e linha vertical no deadline. Identificar claramente curvas condicionadas a respostas. Investigar se uma curva aparentemente favorável decorre de muitas recusas ou respostas ausentes.
+
+Os contrastes principais são E1/E2 e E3/E4 para política; E1/E3 e E2/E4 para kernel; E2/E5 e E4/E6 para interferência em FIFO. Discutir ganho absoluto em microssegundos e impacto no atendimento ao deadline, evitando reduzir a conclusão a percentuais sobre medianas.
+
+\section{Limitações e ameaças à validade}
+\begin{itemize}
+\item \textbf{Uma execução por condição:} não há estimativa de variabilidade entre execuções; os contrastes são descritivos. Um milhão de eventos não equivale a um milhão de repetições independentes.
+\item \textbf{Dependência temporal:} amostras consecutivas podem ser correlacionadas. Não aplicar testes ou intervalos que pressuponham independência sem justificativa.
+\item \textbf{Instrumentação:} captura por software no ESP32 acrescenta jitter; armazenamento e exportação podem perturbar o gerador.
+\item \textbf{Admissão limitada:} descarte por ocupação altera os estímulos efetivamente emitidos durante sobrecarga. As conclusões se referem a essa política de atendimento.
+\item \textbf{Caminho completo:} resultados incluem GPIO, driver, IRQ, despertar, computação e resposta; não isolam apenas escalonamento.
+\item \textbf{Plataforma:} frequência, temperatura, memória compartilhada, firmware e diferenças entre builds podem afetar as caudas.
+\item \textbf{Generalização:} uma placa, um perfil de stress, um período e um processamento não caracterizam todas as aplicações embarcadas.
 \end{itemize}
 
-\section{Structure}
+Não atribuir causalidade exclusiva ao kernel quando houver diferenças relevantes não controladas. Não apresentar o estudo como prova de garantia de tempo real rígido.
 
-Explain how the project is organized. Mention sections, phases, or files if applicable. This helps readers or collaborators get oriented quickly.
+\section{Etapas e entregáveis}
+\begin{center}
+\begin{tabularx}{\textwidth}{lY}
+\toprule
+Etapa & Produto verificável \\
+\midrule
+Preparação & Dois kernels funcionais, inventário da plataforma e configuração arquivada. \\
+Implementação & Firmware ESP32, aplicação de atendimento e protocolo REQ/ACK. \\
+Piloto & Medição validada; período, deadline, processamento, prioridade e stress congelados. \\
+Campanha & Seis execuções documentadas e arquivos brutos íntegros. \\
+Análise & Scripts, CCDFs, tabela comparativa e discussão das limitações. \\
+Relatório & Método reprodutível, resultados observados e resposta à pergunta de pesquisa. \\
+\bottomrule
+\end{tabularx}
+\end{center}
 
-\section{Next Steps}
+A entrega deverá incluir código-fonte, comandos e metadados, esquema de ligação, configurações dos kernels, dados brutos, scripts de análise e relatório final. O leitor deve conseguir reconstruir cada curva a partir dos registros exportados.
 
-Outline what comes next — development, meetings, initial research, or planning stages. Optionally include dates or deadlines.
+\section{Critérios de conclusão}
+O trabalho estará concluído quando o protocolo tiver sido implementado e validado, as seis condições tiverem resultados válidos ou falhas explicitamente documentadas, e a análise relacionar a cauda das respostas ao atendimento das ofertas. O resultado esperado é identificar quais configurações atendem melhor ao requisito escolhido nas condições observadas, sem pressupor antecipadamente superioridade do PREEMPT\_RT.
 
-\subsection*{Contact}
-
-For more information, reach out to: \texttt{email@example.com}
-
+\begin{thebibliography}{9}
+\bibitem{rt-theory} The Linux Kernel Documentation. \emph{Real-time preemption: theory of operation}. Disponível em: \url{https://docs.kernel.org/core-api/real-time/theory.html}.
+\bibitem{eevdf} The Linux Kernel Documentation. \emph{EEVDF Scheduler}. Disponível em: \url{https://docs.kernel.org/scheduler/sched-eevdf.html}.
+\bibitem{stressng} Colin Ian King. \emph{stress-ng: manual e código-fonte}. Disponível em: \url{https://github.com/ColinIanKing/stress-ng/blob/master/stress-ng.1}. A versão efetivamente utilizada deverá ser registrada no experimento.
+\end{thebibliography}
 \end{document}
+
+
