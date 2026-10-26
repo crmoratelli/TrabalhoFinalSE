@@ -68,12 +68,13 @@ Serão utilizados Linux com PREEMPT\_RT desabilitado e Linux com PREEMPT\_RT hab
 
 O termo ``Linux convencional'' designa a configuração sem PREEMPT\_RT; o modelo de preempção efetivamente utilizado deverá constar no relatório. Não basta registrar apenas ``vanilla''. PREEMPT\_RT modifica mecanismos como travas e tratamento de interrupções, permitindo maior preempção em caminhos relevantes para a latência~\cite{rt-theory}.
 
-Se não for possível utilizar a mesma versão-base, a diferença deverá ser explicitada como fator de confusão. Devem ser arquivados os arquivos de configuração dos kernels e suas versões completas.
+%Se não for possível utilizar a mesma versão-base, a diferença deverá ser explicitada como fator de confusão. Devem ser arquivados os arquivos de configuração dos kernels e suas versões completas.
 
 \subsection{Políticas de escalonamento}
 A comparação usará SCHED\_OTHER com nice 0 e SCHED\_FIFO com prioridade fixa. A expressão CFS poderá aparecer apenas se corresponder à implementação da versão escolhida. Em kernels recentes, a classe normal utiliza EEVDF; portanto, o nome operacional usado neste protocolo é SCHED\_OTHER~\cite{eevdf}.
 
-A prioridade FIFO inicial proposta é 40. Ela será confirmada no piloto após inspeção das prioridades das threads de IRQ do GPIO no PREEMPT\_RT. A intenção é evitar que a thread de aplicação impeça o progresso da thread de IRQ necessária ao próprio atendimento. A prioridade final será idêntica nas duas execuções FIFO de cada cenário e ficará congelada antes da coleta principal.
+A prioridade FIFO inicial proposta é 40. %Ela será confirmada no piloto após inspeção das prioridades das threads de IRQ do GPIO no PREEMPT\_RT. 
+A intenção é evitar que a thread de aplicação impeça o progresso da thread de IRQ necessária ao próprio atendimento. A prioridade final será idêntica nas duas execuções FIFO de cada cenário e ficará congelada antes da coleta principal.
 
 A aplicação deverá conferir se a política e a afinidade foram aplicadas à \emph{thread de atendimento}, registrar falhas e abortar se a configuração não corresponder ao tratamento. A tarefa deverá bloquear aguardando o GPIO; não será usado polling contínuo.
 
