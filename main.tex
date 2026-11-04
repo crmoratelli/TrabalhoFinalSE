@@ -114,7 +114,7 @@ Utilizar sinais compatíveis com 3,3 V e registrar os modelos exatos das placas,
 
 \subsection{Computação da Raspberry}
 
-Será utilizada uma aplicação em C com uma única thread de atendimento, escalonada por SCHED_FIFO. A thread permanece bloqueada aguardando um evento de GPIO gerado pela interrupção de entrada REQ. Ao receber o evento, executa um filtro FIR com número fixo de operações e atualiza ACK para o nível recebido em REQ. Essa transição sinaliza a conclusão e pode gerar
+Será utilizada uma aplicação em C com uma única thread de atendimento, escalonada por SCHED\_FIFO. A thread permanece bloqueada aguardando um evento de GPIO gerado pela interrupção de entrada REQ. Ao receber o evento, executa um filtro FIR com número fixo de operações e atualiza ACK para o nível recebido em REQ. Essa transição sinaliza a conclusão e pode gerar
 uma interrupção no ESP32. A computação é executada em espaço de usuário, não dentro do tratador de interrupção do kernel.
 
 O período de oferta será $T=10$ ms e o deadline relativo de resposta será $D=10$ ms. A carga computacional nominal será de aproximadamente $C=600\,\mu\mathrm{s}$ de tempo de CPU por solicitação, correspondendo a
@@ -122,24 +122,30 @@ O período de oferta será $T=10$ ms e o deadline relativo de resposta será $D=
 \begin{equation}
     U_{\mathrm{FIR}} =
     \frac{C}{T} =
-    \frac{0{,}6\,\mathrm{ms}}{5\,\mathrm{ms}} =
+    \frac{1{,}2\,\mathrm{ms}}{10\,\mathrm{ms}} =
     0{,}12.
 \end{equation}
 
 Os 12\% referem-se à utilização nominal de um núcleo apenas pelo FIR. O custo de GPIO, IRQs, chamadas de sistema e instrumentação pode elevar a utilização total.
 
-No piloto, em um único kernel de referência e sem stress-ng, a quantidade
-de rodadas do FIR será calibrada para aproximadamente
-$600\,\mu\mathrm{s}$ de tempo de CPU, com tolerância de $\pm5\%$.
-As dimensões obtidas serão mantidas nas quatro execuções, sem
-recalibração por kernel ou sob interferência.
+No piloto, em um único kernel de referência e sem stress-ng, a quantidade de rodadas do FIR será calibrada para aproximadamente $1.2 ms$ de tempo de CPU, com tolerância de $\pm5\%$.
+As dimensões obtidas serão mantidas nas quatro execuções, sem recalibração por kernel ou sob interferência.
 
-Durante o atendimento GPIO, será executada a quantidade fixa de operações
-calibrada, sem espera baseada no relógio. O tempo completo entre REQ e ACK
-deverá atender ao deadline de 10 ms, verificado pelo ESP32.
+Durante o atendimento GPIO, será executada a quantidade fixa de operações calibrada, sem espera baseada no relógio. O tempo completo entre REQ e ACK deverá atender ao deadline de 10 ms, verificado pelo ESP32. 
 
 \section{Modelo temporal e protocolo de associação}
+
 \subsection{Período, deadline e oferta}
+
+% Na subseção sobre período e deadline:
+
+O período será $T=10$ ms e o deadline relativo será $D=10$ ms, contado a partir da solicitação efetivamente emitida.
+
+Como $D>T$, uma resposta recebida entre 5 e 10 ms pode cumprir
+o deadline da própria solicitação e, ainda assim, provocar recusa
+da oferta seguinte por ocupação. Atrasos de solicitações admitidas
+e recusas de novas ofertas serão apresentados separadamente.
+
 O ESP32 manterá instantes de oferta definidos por
 \begin{equation}
  a_i=a_0+iT,\qquad i=0,\ldots,N-1,
