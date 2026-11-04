@@ -137,24 +137,21 @@ Durante o atendimento GPIO, será executada a quantidade fixa de operações cal
 
 \subsection{Período, deadline e oferta}
 
-% Na subseção sobre período e deadline:
-
 O período será $T=10$ ms e o deadline relativo será $D=10$ ms, contado a partir da solicitação efetivamente emitida.
 
-Como $D>T$, uma resposta recebida entre 5 e 10 ms pode cumprir
-o deadline da própria solicitação e, ainda assim, provocar recusa
-da oferta seguinte por ocupação. Atrasos de solicitações admitidas
-e recusas de novas ofertas serão apresentados separadamente.
+%Como $D>T$, uma resposta recebida entre 5 e 10 ms pode cumprir o deadline da própria solicitação e, ainda assim, provocar recusa da oferta seguinte por ocupação. Atrasos de solicitações admitidas e recusas de novas ofertas serão apresentados separadamente.
 
 O ESP32 manterá instantes de oferta definidos por
 \begin{equation}
  a_i=a_0+iT,\qquad i=0,\ldots,N-1,
 \end{equation}
-com período $T$ e deadline relativo $D<T$. Os valores iniciais propostos são $T=1$ ms e $D=500\us$. O piloto deverá confirmar sua adequação ao propósito da aplicação simulada. Os valores finais serão fixados antes das quatro execuções.
+com período $T$ e deadline relativo $D=T$. %Os valores iniciais propostos são $T=1$ ms e $D=500\us$. 
+O piloto deverá confirmar sua adequação ao propósito da aplicação simulada. Os valores finais serão fixados antes das quatro execuções.
 
 A thread da Raspberry é \textbf{acionada por eventos}; não é uma tarefa que acorda periodicamente para consultar uma entrada. A periodicidade pertence ao calendário de oferta do ESP32.
 
 \subsection{Uma solicitação em voo e descarte explícito por ocupação}
+
 Com apenas dois sinais e sem identificadores transmitidos, permitir várias solicitações pendentes dificulta associar respostas, especialmente se eventos forem perdidos. Para manter a implementação simples e a medição inequívoca, este protocolo admite \textbf{no máximo uma solicitação em voo}.
 
 REQ e ACK usam alternância de nível: iniciam em zero; para admitir uma solicitação, o ESP32 inverte REQ. Ao concluir o processamento, a Raspberry atualiza ACK para o nível recebido de REQ. Uma transição correspondente de ACK encerra o atendimento. Essa alternância evita pulsos de ACK excessivamente curtos.
@@ -173,10 +170,13 @@ Uma solicitação atrasada continua pendente após $D$, pois um ACK tardio preci
 Para estudar filas ou geração física incondicional de eventos, seria necessário outro protocolo com identificadores e controle explícito de buffers. Essa extensão fica fora deste trabalho.
 
 \subsection{Tempo observado e erro de instrumentação}
+
 Para uma solicitação admitida com resposta, o ESP32 calcula
+
 \begin{equation}
  R_i^{\mathrm{obs}}=t_{\mathrm{ACK},i}^{\mathrm{ESP}}-t_{\mathrm{REQ},i}^{\mathrm{ESP}}.
 \end{equation}
+
 Os timestamps usam o mesmo relógio; não é necessária sincronização entre placas. O intervalo inclui emissão de REQ, recepção e despertar na Raspberry, processamento, emissão de ACK e captura no ESP32. Não representa exclusivamente latência do escalonador.
 
 Com captura por software, registrar $t_{\mathrm{REQ}}$ imediatamente antes de alterar REQ e $t_{\mathrm{ACK}}$ no início da rotina de atendimento de ACK. A medida inclui o atraso entre a leitura do relógio e a mudança física de REQ, assim como a latência da interrupção de ACK no ESP32. Preferir captura por hardware quando suportada pelo modelo escolhido; sua disponibilidade não é pressuposta.
@@ -184,6 +184,7 @@ Com captura por software, registrar $t_{\mathrm{REQ}}$ imediatamente antes de al
 Registrar resolução, frequência e largura do contador, tratamento de overflow e a ordem das operações. Desabilitar Wi-Fi e Bluetooth no ESP32 e evitar saída serial no caminho de medição. Validar o mecanismo por loopback e, quando disponível, por analisador lógico capturando REQ e ACK simultaneamente. Relatar viés e dispersão observados; não subtrair arbitrariamente uma constante das amostras. Sem validação externa, declarar que a latência da instrumentação não foi separada da resposta do sistema.
 
 \section{Carga concorrente com stress-ng}
+
 Será empregado apenas um perfil de interferência: \textbf{CPU e memória simultaneamente}. O stress-ng permanecerá em SCHED\_OTHER, nice 0, em todas as execuções com carga. O benchmark permanecerá em SCHED\_FIFO com a mesma prioridade, tanto nas referências quanto nos cenários carregados. A versão e os parâmetros do stress-ng serão mantidos constantes~\cite{stressng}.
 
 Exemplo para uma placa com quatro núcleos e RAM suficiente:
@@ -219,21 +220,7 @@ Propõe-se $N=10^6$ ofertas por execução. Para $T=1$ ms, cada janela de oferta
 
 Aquecimento proposto: 30 s com o perfil correspondente já ativo. Sortear previamente a ordem das quatro condições e registrar o resultado; os IDs não determinam a ordem. Ensaios curtos de configuração, calibração e depuração pertencem ao piloto e não integram as quatro execuções principais.
 
-\section{Procedimento de execução}
-\begin{enumerate}
-\item Identificar placa, kernel e configuração; confirmar modelo de preempção.
-\item Aplicar as configurações fixas de frequência, afinidade e serviços. Registrar temperatura e throttling. Usar alimentação e refrigeração estáveis.
-\item Iniciar a aplicação e verificar memória bloqueada, política, prioridade e linhas GPIO. Confirmar que REQ e ACK estão no estado inicial acordado.
-\item Para cenários carregados, iniciar stress-ng em SCHED\_OTHER e confirmar workers e afinidade. Para referências, manter os mesmos serviços, retirando apenas stress-ng.
-\item Realizar o aquecimento. O protocolo de medição deve estar pronto antes da primeira oferta válida.
-\item Iniciar o calendário absoluto de $N$ ofertas e armazenar eventos, admissões, ACKs e falhas.
-\item Encerrar as ofertas, aguardar $G$ e fechar a coleta. Exportar os dados e logs após a janela crítica.
-\item Verificar integridade: número de ofertas, associação de ACKs, overflow de buffers, política efetiva, duração e continuidade do stress-ng.
-\end{enumerate}
 
-Uma execução com perda de dados na instrumentação, troca incorreta de política ou interrupção prematura do stress-ng é inválida, não um resultado temporal válido. A campanha prevê quatro execuções principais. Uma condição inválida deverá ser identificada como tal; qualquer repetição necessária será documentada e não poderá ser substituída silenciosamente. Idealmente, o piloto deve eliminar esses problemas antes da campanha.
-
-A instrumentação não deve exigir que um milhão de registros caibam na RAM interna do ESP32. Dimensionar o armazenamento para a placa: usar PSRAM, captura por periféricos ou buffers em blocos drenados por tarefa de baixa prioridade. Validar que a transferência não prejudica o gerador. Contabilizar overflow; nunca descartá-lo silenciosamente.
 
 \section{Dados e métricas}
 \subsection{Registros mínimos}
