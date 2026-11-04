@@ -221,9 +221,10 @@ Propõe-se $N=10^6$ ofertas por execução. Para $T=1$ ms, cada janela de oferta
 Aquecimento proposto: 30 s com o perfil correspondente já ativo. Sortear previamente a ordem das quatro condições e registrar o resultado; os IDs não determinam a ordem. Ensaios curtos de configuração, calibração e depuração pertencem ao piloto e não integram as quatro execuções principais.
 
 
-
 \section{Dados e métricas}
+
 \subsection{Registros mínimos}
+
 Cada oferta deve conter: ID da execução, índice da oferta, instante previsto, instante efetivo de emissão quando admitida, timestamp de ACK quando presente, tempo observado, estado final e indicador de atraso do próprio gerador. Instantes efetivos permitem detectar jitter de emissão do ESP32.
 
 Os estados finais mutuamente exclusivos são: \texttt{no\_prazo}, \texttt{atrasada}, \texttt{nao\_admitida\_ocupado} e \texttt{sem\_resposta\_ao\_encerrar}. Informações de integridade, como overflow de buffers e ACK inesperado, ficam em campos separados. Se o ESP32 perder um instante de oferta, registrar falha do gerador e avaliar a validade do ensaio, sem atribuí-la automaticamente ao kernel.
@@ -244,6 +245,7 @@ A taxa global de falha de atendimento é
 As três parcelas de falha devem ser mostradas separadamente. A perda de prazo entre solicitações respondidas não deve ser confundida com essa taxa global.
 
 \subsection{CCDF e estatísticas de resposta}
+
 Seja $\mathcal{V}$ o conjunto de solicitações admitidas com resposta observada até o encerramento. A CCDF empírica condicional é
 \begin{equation}
  \widehat{\overline F}_{\mathrm{resp}}(x)=
