@@ -25,65 +25,76 @@
 \newcolumntype{Y}{>{\raggedright\arraybackslash}X}
 \lstset{basicstyle=\ttfamily\small,breaklines=true,frame=single,columns=fullflexible,keepspaces=true,showstringspaces=false}
 \newcommand{\us}{\ensuremath{\,\mu\mathrm{s}}}
-\title{Avaliação de tempos de resposta e cumprimento de deadlines em Linux convencional e PREEMPT\_RT\\[0.4em]\large Proposta de trabalho e protocolo experimental}
+\title{Avaliação de tempos de resposta e cumprimento de deadlines com SCHED\_FIFO em Linux convencional e PREEMPT\_RT\\[0.4em]\large Proposta de trabalho e protocolo experimental}
 \author{Disciplina de Sistemas Embarcados}
-\date{26 de outubro de 2026}
-
+\date{4 de novembro de 2026}
 
 \begin{document}
 
 \maketitle
 
 \begin{abstract}
-Este trabalho propõe comparar o atendimento de solicitações externas em uma Raspberry Pi executando Linux sem PREEMPT\_RT e Linux com PREEMPT\_RT. Um ESP32 oferece solicitações periódicas, sinaliza aquelas admitidas por GPIO e mede o intervalo até a resposta da Raspberry, após uma computação de tamanho fixo. O benchmark será executado com as políticas SCHED\_OTHER e SCHED\_FIFO, sob interferência de CPU e memória produzida pelo stress-ng. O protocolo contém seis execuções principais: quatro combinações de kernel e política sob interferência e duas referências FIFO sem carga adicional. A análise utilizará CCDFs empíricas, percentis, máximo observado e falhas de atendimento ao deadline. O estudo terá caráter exploratório e não estabelecerá garantias formais de pior caso.
+Este trabalho propõe comparar o atendimento de solicitações externas em uma Raspberry Pi executando Linux sem PREEMPT\_RT e Linux com PREEMPT\_RT. Um ESP32 oferece solicitações periódicas, sinaliza aquelas admitidas por GPIO e mede o intervalo até a resposta da Raspberry, após uma computação de tamanho fixo. O benchmark utilizará exclusivamente SCHED\_FIFO, com prioridade fixa nos dois kernels. O protocolo contém quatro execuções principais, cruzando a configuração do kernel com a presença ou ausência de interferência de CPU e memória produzida pelo stress-ng. O foco será o ganho adicional de previsibilidade oferecido por PREEMPT\_RT quando a aplicação já utiliza uma política de tempo real. A análise utilizará CCDFs empíricas, percentis, máximo observado e falhas de atendimento ao deadline. %O estudo terá caráter exploratório e não estabelecerá garantias formais de pior caso.
 \end{abstract}
+
 %\setcounter{tocdepth}{1}
 %{\small\setlength{\parskip}{0pt}\tableofcontents}
 %\newpage
 
 \section{Problema e delimitação}
+
 Sistemas embarcados que utilizam Linux podem precisar atender eventos externos dentro de um prazo, mesmo durante a execução de outras aplicações. Uma baixa latência média não implica que todos os atendimentos terminem no prazo: atrasos raros podem ser determinantes para a aplicação.
 
-A proposta é estudar uma tarefa de atendimento acionada por GPIO, com processamento definido e resposta observável externamente. O foco é o efeito combinado da configuração de preempção do kernel e da política de escalonamento sobre a distribuição dos tempos de resposta.
+A proposta é estudar uma tarefa de atendimento acionada por GPIO, com processamento definido e resposta observável externamente. O foco é o efeito da configuração de preempção do kernel sobre a distribuição dos tempos de resposta de uma aplicação que já utiliza SCHED\_FIFO, com e sem interferência concorrente.
 
-\textbf{Pergunta de pesquisa:} sob interferência de CPU e memória, como PREEMPT\_RT e as políticas SCHED\_OTHER e SCHED\_FIFO afetam os tempos de resposta e o cumprimento de deadlines no atendimento de solicitações externas periódicas?
+\textbf{Pergunta de pesquisa:} qual ganho adicional PREEMPT\_RT oferece à previsibilidade dos tempos de resposta e ao cumprimento de deadlines de uma tarefa SCHED\_FIFO acionada por solicitações externas periódicas, com e sem interferência de CPU e memória?
 
-O escopo inclui uma Raspberry Pi, um ESP32, uma tarefa de atendimento, um período, um deadline e um tamanho de processamento. Xenomai, comunicação sem fio, SPI, múltiplas tarefas críticas e exploração de várias prioridades ficam fora do escopo. Os números iniciais deste documento são parâmetros propostos, não resultados medidos.
+O escopo inclui uma Raspberry Pi, um ESP32, uma tarefa de atendimento, um período, um deadline e um tamanho de processamento. %A comparação com SCHED\_OTHER, Xenomai, comunicação sem fio, SPI, múltiplas tarefas críticas e exploração de várias prioridades ficam fora do escopo. 
+SCHED\_OTHER será usado apenas pelas tarefas de interferência, não como tratamento do benchmark. Os números iniciais deste documento são parâmetros propostos, não resultados medidos.
 
 \section{Objetivos e hipóteses}
+
 \subsection{Objetivo geral}
-Avaliar experimentalmente o efeito de PREEMPT\_RT e da política de escalonamento sobre o atendimento de solicitações externas sob interferência controlada.
+
+Avaliar experimentalmente o efeito de PREEMPT\_RT sobre o atendimento de solicitações externas por uma tarefa SCHED\_FIFO, mantendo a política e a prioridade fixas e variando a presença de interferência controlada.
 
 \subsection{Objetivos específicos}
+
 \begin{enumerate}
 \item Implementar geração de solicitações e medição externa com ESP32.
-\item Implementar o mesmo processamento em C ou C++ nos dois kernels.
-\item Executar a thread de atendimento em SCHED\_OTHER e SCHED\_FIFO.
+\item Implementar o mesmo processamento em C nos dois kernels.
+\item Executar o processo de atendimento em SCHED\_FIFO, com a mesma prioridade nos dois kernels.
 \item Produzir interferência reproduzível de CPU e memória com stress-ng.
-\item Comparar CCDFs, percentis e taxas de falha em seis execuções principais.
+\item Comparar CCDFs, percentis e taxas de falha em quatro execuções principais.
 \item Documentar as limitações da medição e da ausência de repetições por condição.
 \end{enumerate}
 
-As hipóteses exploratórias são: (H1) FIFO reduz atrasos em relação a SCHED\_OTHER sob a mesma interferência; (H2) PREEMPT\_RT reduz a cauda dos tempos de resposta, especialmente em combinação com FIFO; e (H3) a interferência degrada o atendimento FIFO em magnitude dependente do kernel. Diferenças pequenas, ausência de ganho ou inversões na ordenação também são resultados válidos.
+As hipóteses exploratórias são: (H1) sob interferência, PREEMPT\_RT reduz a probabilidade de atrasos extremos em relação ao kernel sem RT, mantendo SCHED\_FIFO nos dois ambientes; (H2) o aumento de p99,9 e da taxa global de falha ao adicionar interferência é menor com PREEMPT\_RT; e (H3) sem interferência adicional, as medianas podem ser próximas e a diferença pode concentrar-se na cauda. %Diferenças pequenas, ausência de ganho ou inversões na ordenação também são resultados válidos. As hipóteses serão avaliadas de forma descritiva, dada a ausência de repetições independentes por condição.
 
 \section{Ambientes de execução}
-\subsection{Configuração do kernel}
-Serão utilizados Linux com PREEMPT\_RT desabilitado e Linux com PREEMPT\_RT habilitado, preferencialmente derivados da mesma versão-base e da mesma árvore de fontes. Devem ser preservados sistema de arquivos, bibliotecas, compilador e configurações não relacionadas ao tratamento experimental, sempre que possível.
 
-O termo ``Linux convencional'' designa a configuração sem PREEMPT\_RT; o modelo de preempção efetivamente utilizado deverá constar no relatório. Não basta registrar apenas ``vanilla''. PREEMPT\_RT modifica mecanismos como travas e tratamento de interrupções, permitindo maior preempção em caminhos relevantes para a latência~\cite{rt-theory}.
+\subsection{Configuração do kernel}
+
+Serão utilizados Linux com PREEMPT\_RT desabilitado e Linux com PREEMPT\_RT habilitado, preferencialmente derivados da mesma versão-base e da mesma árvore de fontes. Devem ser preservados sistema de arquivos, bibliotecas, compilador e configurações não relacionadas ao tratamento experimental, sempre que possível. Ou seja, gerar duas distribuições com e sem PREEMPT\_RT. 
+
+O termo ``Linux convencional'' designa a configuração sem PREEMPT\_RT; o modelo de preempção efetivamente utilizado deverá constar no relatório. %Não basta registrar apenas ``vanilla''. 
+PREEMPT\_RT modifica mecanismos como travas e tratamento de interrupções, permitindo maior preempção em caminhos relevantes para a latência~\cite{rt-theory}.
 
 %Se não for possível utilizar a mesma versão-base, a diferença deverá ser explicitada como fator de confusão. Devem ser arquivados os arquivos de configuração dos kernels e suas versões completas.
 
-\subsection{Políticas de escalonamento}
-A comparação usará SCHED\_OTHER com nice 0 e SCHED\_FIFO com prioridade fixa. A expressão CFS poderá aparecer apenas se corresponder à implementação da versão escolhida. Em kernels recentes, a classe normal utiliza EEVDF; portanto, o nome operacional usado neste protocolo é SCHED\_OTHER~\cite{eevdf}.
+\subsection{Política fixa: SCHED\_FIFO}
 
-A prioridade FIFO inicial proposta é 40. %Ela será confirmada no piloto após inspeção das prioridades das threads de IRQ do GPIO no PREEMPT\_RT. 
-A intenção é evitar que a thread de aplicação impeça o progresso da thread de IRQ necessária ao próprio atendimento. A prioridade final será idêntica nas duas execuções FIFO de cada cenário e ficará congelada antes da coleta principal.
+A tarefa de atendimento usará exclusivamente SCHED\_FIFO nas quatro condições. A política de escalonamento deixa de ser um fator experimental: variam apenas a configuração de preempção do kernel e a presença de interferência.
+
+SCHED\_FIFO atribui precedência à tarefa sobre aplicações da classe normal quando a CPU pode escaloná-la. No kernel sem PREEMPT\_RT, trechos não preemptíveis e tratamento de interrupções ainda podem atrasar sua execução. PREEMPT\_RT reduz essas fontes de bloqueio por mecanismos como travas preemptíveis e interrupções em threads, mas não elimina todas as fontes de atraso~\cite{rt-theory}.
+
+A prioridade FIFO inicial proposta é 40. Ela será confirmada no piloto após inspeção das prioridades das threads de IRQ do GPIO no PREEMPT\_RT. A prioridade e a afinidade da aplicação e sua relação com as IRQs serão documentadas. A prioridade final da aplicação será idêntica nas quatro execuções e ficará congelada antes da coleta principal.
 
 A aplicação deverá conferir se a política e a afinidade foram aplicadas à \emph{thread de atendimento}, registrar falhas e abortar se a configuração não corresponder ao tratamento. A tarefa deverá bloquear aguardando o GPIO; não será usado polling contínuo.
 
 \section{Arquitetura e processamento}
 \subsection{Componentes e ligações}
+
 \begin{center}
 \begin{tabularx}{\textwidth}{lY}
 \toprule
@@ -99,7 +110,7 @@ Analisador lógico & Validação opcional dos intervalos entre transições de R
 \end{tabularx}
 \end{center}
 
-Utilizar sinais compatíveis com 3,3 V e registrar os modelos exatos das placas, pinos e esquema de ligação. O caminho de GPIO deve ser o mesmo nos dois kernels, preferencialmente pela interface de dispositivo de caracteres e uma versão fixa da libgpiod. Os mecanismos de solicitação de linhas, captura de eventos e buffers serão documentados.
+Utilizar sinais compatíveis com 3,3 V e registrar os modelos exatos das placas, pinos e esquema de ligação. O caminho de GPIO deve ser o mesmo nos dois kernels, pela interface de dispositivo de caracteres do Linux, usando a ABI GPIO v2 diretamente na aplicação de benchmark. Os mecanismos de solicitação de linhas, captura de eventos e buffers serão documentados.
 
 \subsection{Computação da Raspberry}
 A thread aguarda uma transição de REQ, executa uma computação com número fixo de operações e atualiza ACK. Propõe-se um filtro FIR com coeficientes e amostras previamente alocados. O número de amostras e coeficientes será escolhido no piloto, visando inicialmente algumas dezenas de microssegundos de processamento na placa utilizada.
@@ -114,7 +125,7 @@ O ESP32 manterá instantes de oferta definidos por
 \begin{equation}
  a_i=a_0+iT,\qquad i=0,\ldots,N-1,
 \end{equation}
-com período $T$ e deadline relativo $D<T$. Os valores iniciais propostos são $T=1$ ms e $D=500\us$. O piloto deverá confirmar sua adequação ao propósito da aplicação simulada. Os valores finais serão fixados antes das seis execuções.
+com período $T$ e deadline relativo $D<T$. Os valores iniciais propostos são $T=1$ ms e $D=500\us$. O piloto deverá confirmar sua adequação ao propósito da aplicação simulada. Os valores finais serão fixados antes das quatro execuções.
 
 A thread da Raspberry é \textbf{acionada por eventos}; não é uma tarefa que acorda periodicamente para consultar uma entrada. A periodicidade pertence ao calendário de oferta do ESP32.
 
@@ -148,42 +159,40 @@ Com captura por software, registrar $t_{\mathrm{REQ}}$ imediatamente antes de al
 Registrar resolução, frequência e largura do contador, tratamento de overflow e a ordem das operações. Desabilitar Wi-Fi e Bluetooth no ESP32 e evitar saída serial no caminho de medição. Validar o mecanismo por loopback e, quando disponível, por analisador lógico capturando REQ e ACK simultaneamente. Relatar viés e dispersão observados; não subtrair arbitrariamente uma constante das amostras. Sem validação externa, declarar que a latência da instrumentação não foi separada da resposta do sistema.
 
 \section{Carga concorrente com stress-ng}
-Será empregado apenas um perfil de interferência: \textbf{CPU e memória simultaneamente}. O stress-ng permanecerá em SCHED\_OTHER, nice 0, em todas as execuções com carga. Apenas a política do benchmark varia. A versão e os parâmetros do stress-ng serão mantidos constantes~\cite{stressng}.
+Será empregado apenas um perfil de interferência: \textbf{CPU e memória simultaneamente}. O stress-ng permanecerá em SCHED\_OTHER, nice 0, em todas as execuções com carga. O benchmark permanecerá em SCHED\_FIFO com a mesma prioridade, tanto nas referências quanto nos cenários carregados. A versão e os parâmetros do stress-ng serão mantidos constantes~\cite{stressng}.
 
 Exemplo para uma placa com quatro núcleos e RAM suficiente:
 \begin{lstlisting}
-stress-ng --cpu 4 --cpu-method sqrt \
+chrt -o 0 stress-ng --cpu 4 --cpu-method sqrt \
   --vm 1 --vm-bytes 256M --vm-keep \
   --timeout 20m --metrics-brief
 \end{lstlisting}
 
-O comando é uma configuração inicial. Confirmar flags na versão instalada, RAM disponível e ausência de swapping no piloto. O tamanho de 256 MiB será ajustado se necessário e congelado. A carga deve começar antes da janela medida e continuar até seu término; o timeout precisa cobrir aquecimento, coleta e janela final.
+O comando é uma configuração inicial e força a política normal para o stress-ng; executá-lo a partir de uma sessão com nice 0 e afinidade adequada. Confirmar flags na versão instalada, permissões, RAM disponível e ausência de swapping no piloto. O tamanho de 256 MiB será ajustado se necessário e congelado. A carga deve começar antes da janela medida e continuar até seu término; o timeout precisa cobrir aquecimento, coleta e janela final.
 
 Fixar a thread de atendimento em um núcleo previamente escolhido. Permitir que os workers do stress-ng executem em todos os núcleos, incluindo esse núcleo, com um worker de CPU por núcleo disponível. Não isolar o núcleo crítico da carga neste estudo. Registrar afinidade de IRQs e threads; manter a mesma política de afinidade entre tratamentos, documentando diferenças próprias do PREEMPT\_RT.
 
-O perfil solicita trabalho concorrente reproduzível, mas não garante a mesma banda efetiva de memória ou percentual exato de CPU em todos os ambientes. As métricas do stress-ng servem para caracterizar a interferência, não substituem as métricas temporais do benchmark.
+Como a tarefa FIFO tem precedência sobre tarefas SCHED\_OTHER, a carga de CPU por si só pode produzir pouca degradação. A pressão de memória acrescenta disputa por recursos compartilhados, mas não garante grandes diferenças entre kernels. O perfil solicita trabalho concorrente reproduzível, mas não garante a mesma banda efetiva de memória ou percentual exato de CPU em todos os ambientes. As métricas do stress-ng servem para caracterizar a interferência, não substituem as métricas temporais do benchmark.
 
-\section{Matriz de seis execuções}
+\section{Matriz de quatro execuções}
 \begin{center}
 \begin{tabularx}{\textwidth}{cllY}
 \toprule
 ID & Kernel & Política & Interferência \\
 \midrule
-E1 & Sem PREEMPT\_RT & SCHED\_OTHER & CPU + memória \\
-E2 & Sem PREEMPT\_RT & SCHED\_FIFO & CPU + memória \\
-E3 & Com PREEMPT\_RT & SCHED\_OTHER & CPU + memória \\
+E1 & Sem PREEMPT\_RT & SCHED\_FIFO & Sem stress-ng \\
+E2 & Com PREEMPT\_RT & SCHED\_FIFO & Sem stress-ng \\
+E3 & Sem PREEMPT\_RT & SCHED\_FIFO & CPU + memória \\
 E4 & Com PREEMPT\_RT & SCHED\_FIFO & CPU + memória \\
-E5 & Sem PREEMPT\_RT & SCHED\_FIFO & Sem stress-ng \\
-E6 & Com PREEMPT\_RT & SCHED\_FIFO & Sem stress-ng \\
 \bottomrule
 \end{tabularx}
 \end{center}
 
-Há uma execução principal por condição. E1--E4 permitem comparar kernel e política sob interferência. E2/E5 e E4/E6 permitem observar o efeito da carga nas configurações FIFO. Não há referência SCHED\_OTHER sem stress; portanto, o desenho não permite estimar o efeito completo da interação kernel, política e carga.
+O desenho cruza dois fatores, kernel e interferência, com dois níveis cada. Há uma execução principal por condição. E1/E2 comparam os kernels sem carga adicional; E3/E4 comparam os kernels sob interferência; E1/E3 e E2/E4 mostram o efeito da carga em cada kernel. A política e a prioridade da tarefa são constantes em toda a campanha.
 
-Propõe-se $N=10^6$ ofertas por execução. Para $T=1$ ms, cada janela de oferta dura aproximadamente 16 minutos e 40 segundos, totalizando cerca de 100 minutos de coleta principal, além de aquecimento, inicialização e troca de kernel. O número de respostas válidas pode ser menor que $N$.
+Propõe-se $N=10^6$ ofertas por execução. Para $T=1$ ms, cada janela de oferta dura aproximadamente 16 minutos e 40 segundos, totalizando cerca de 66 minutos e 40 segundos de coleta principal, além de aquecimento, inicialização e troca de kernel. O número de respostas válidas pode ser menor que $N$.
 
-Aquecimento proposto: 30 s com o perfil correspondente já ativo. Sortear previamente a ordem das seis condições e registrar o resultado; os IDs não determinam a ordem. Ensaios curtos de configuração, calibração e depuração pertencem ao piloto e não integram as seis execuções principais.
+Aquecimento proposto: 30 s com o perfil correspondente já ativo. Sortear previamente a ordem das quatro condições e registrar o resultado; os IDs não determinam a ordem. Ensaios curtos de configuração, calibração e depuração pertencem ao piloto e não integram as quatro execuções principais.
 
 \section{Procedimento de execução}
 \begin{enumerate}
@@ -197,7 +206,7 @@ Aquecimento proposto: 30 s com o perfil correspondente já ativo. Sortear previa
 \item Verificar integridade: número de ofertas, associação de ACKs, overflow de buffers, política efetiva, duração e continuidade do stress-ng.
 \end{enumerate}
 
-Uma execução com perda de dados na instrumentação, troca incorreta de política ou interrupção prematura do stress-ng é inválida, não um resultado temporal válido. Sob limite rígido de seis tentativas totais, reportar a condição inválida como ausente; não substituir silenciosamente nem inventar resultados. Idealmente, o piloto deve eliminar esses problemas antes da campanha.
+Uma execução com perda de dados na instrumentação, troca incorreta de política ou interrupção prematura do stress-ng é inválida, não um resultado temporal válido. A campanha prevê quatro execuções principais. Uma condição inválida deverá ser identificada como tal; qualquer repetição necessária será documentada e não poderá ser substituída silenciosamente. Idealmente, o piloto deve eliminar esses problemas antes da campanha.
 
 A instrumentação não deve exigir que um milhão de registros caibam na RAM interna do ESP32. Dimensionar o armazenamento para a placa: usar PSRAM, captura por periféricos ou buffers em blocos drenados por tarefa de baixa prioridade. Validar que a transferência não prejudica o gerador. Contabilizar overflow; nunca descartá-lo silenciosamente.
 
@@ -235,18 +244,45 @@ Usar eixo horizontal em microssegundos e eixo vertical logarítmico. Desenhar a 
 
 Calcular mediana, p99, p99,9 e máximo observado somente para respostas válidas, informando o denominador. Se houver poucas respostas, qualificar a instabilidade dos percentis extremos. O máximo observado não é WCET e ausência de falhas não prova probabilidade de falha nula.
 
-\section{Análise e apresentação}
+\section{Análise, resultados esperados e apresentação}
+\subsection{Figuras e tabela de resultados}
 Serão produzidos:
 \begin{enumerate}
-\item \textbf{CCDF principal}: quatro curvas, E1--E4, comparando kernel e política sob interferência.
-\item \textbf{CCDF complementar}: E2, E4, E5 e E6, comparando FIFO com e sem interferência nos dois kernels.
-\item \textbf{Tabela das seis execuções}: ofertas, respostas, mediana, p99, p99,9, máximo, atrasos, recusas por ocupação, censura e taxa global de falha.
+\item \textbf{CCDF sem stress}: curvas E1 e E2, comparando os kernels com a tarefa em SCHED\_FIFO.
+\item \textbf{CCDF com stress}: curvas E3 e E4, comparando os kernels sob interferência de CPU e memória.
+\item \textbf{Tabela das quatro execuções}: ofertas, respostas, mediana, p99, p99,9, máximo observado, atrasos, recusas por ocupação, censura e taxa global de falha.
 \item \textbf{Diagnóstico temporal}: temperatura, frequência, flags de throttling e jitter do gerador, na granularidade disponível.
 \end{enumerate}
 
-Manter escalas comparáveis, unidades e linha vertical no deadline. Identificar claramente curvas condicionadas a respostas. Investigar se uma curva aparentemente favorável decorre de muitas recusas ou respostas ausentes.
+Manter as mesmas escalas nos dois gráficos, unidades e linha vertical no deadline. Identificar claramente curvas condicionadas a respostas. Investigar se uma curva aparentemente favorável decorre de muitas recusas ou respostas ausentes.
 
-Os contrastes principais são E1/E2 e E3/E4 para política; E1/E3 e E2/E4 para kernel; E2/E5 e E4/E6 para interferência em FIFO. Discutir ganho absoluto em microssegundos e impacto no atendimento ao deadline, evitando reduzir a conclusão a percentuais sobre medianas.
+\subsection{Comparações principais}
+Os contrastes de kernel são E1/E2 e E3/E4; os contrastes de interferência são E1/E3 e E2/E4. Discutir diferenças absolutas em microssegundos e impacto no atendimento ao deadline. Para p99,9, por exemplo, comparar descritivamente os incrementos
+\begin{equation}
+ \Delta_{\mathrm{semRT}}=q_{0{,}999}^{\mathrm{E3}}-q_{0{,}999}^{\mathrm{E1}},
+ \qquad
+ \Delta_{\mathrm{RT}}=q_{0{,}999}^{\mathrm{E4}}-q_{0{,}999}^{\mathrm{E2}},
+\end{equation}
+onde $q_{0{,}999}^{\mathrm{Ej}}$ é o percentil p99,9 das respostas observadas na execução Ej. Incrementos menores indicam menor degradação observada sob carga, mas a ausência de repetições impede uma estimativa robusta de sua variabilidade. Comparar também as taxas globais de falha, pois percentis condicionados podem ocultar solicitações recusadas ou sem resposta.
+
+\subsection{Resultado esperado e interpretações alternativas}
+A expectativa é que PREEMPT\_RT reduza principalmente a cauda dos tempos de resposta e a degradação sob interferência. Não se pressupõe redução da mediana em todas as condições: o tratamento de interrupções em threads e outros mecanismos podem acrescentar overhead ao caminho típico e, ao mesmo tempo, reduzir atrasos extremos.
+
+\begin{center}
+\begin{tabularx}{\textwidth}{lYY}
+\toprule
+Aspecto & FIFO sem PREEMPT\_RT & FIFO com PREEMPT\_RT \\
+\midrule
+Sem stress & Respostas geralmente rápidas; possíveis picos. & Mediana possivelmente próxima; expectativa de menor cauda. \\
+Com stress & Possível crescimento dos atrasos extremos. & Expectativa de menor degradação dos atrasos extremos. \\
+Deadline & Falhas dependem de $D$ e da interferência. & Possível redução das falhas quando o cenário as produzir. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+Essas expectativas são hipóteses, não resultados antecipados. Se ambos os kernels atenderem a todas as ofertas no prazo, a conclusão será que, nas condições observadas, FIFO sem PREEMPT\_RT já foi suficiente para o requisito adotado. Ainda poderá haver diferença na cauda. Se não houver diferença relevante, ou se PREEMPT\_RT apresentar desempenho inferior, relatar e discutir o resultado com base na instrumentação, no caminho de IRQ e na carga utilizada.
+
+Não alterar o deadline após observar os resultados para produzir uma separação entre kernels. Análises exploratórias com outros limites poderão ser apresentadas como complementares, mantendo o deadline principal escolhido no piloto.
 
 \section{Limitações e ameaças à validade}
 \begin{itemize}
@@ -270,7 +306,7 @@ Etapa & Produto verificável \\
 Preparação & Dois kernels funcionais, inventário da plataforma e configuração arquivada. \\
 Implementação & Firmware ESP32, aplicação de atendimento e protocolo REQ/ACK. \\
 Piloto & Medição validada; período, deadline, processamento, prioridade e stress congelados. \\
-Campanha & Seis execuções documentadas e arquivos brutos íntegros. \\
+Campanha & Quatro execuções documentadas e arquivos brutos íntegros. \\
 Análise & Scripts, CCDFs, tabela comparativa e discussão das limitações. \\
 Relatório & Método reprodutível, resultados observados e resposta à pergunta de pesquisa. \\
 \bottomrule
@@ -280,13 +316,10 @@ Relatório & Método reprodutível, resultados observados e resposta à pergunta
 A entrega deverá incluir código-fonte, comandos e metadados, esquema de ligação, configurações dos kernels, dados brutos, scripts de análise e relatório final. O leitor deve conseguir reconstruir cada curva a partir dos registros exportados.
 
 \section{Critérios de conclusão}
-O trabalho estará concluído quando o protocolo tiver sido implementado e validado, as seis condições tiverem resultados válidos ou falhas explicitamente documentadas, e a análise relacionar a cauda das respostas ao atendimento das ofertas. O resultado esperado é identificar quais configurações atendem melhor ao requisito escolhido nas condições observadas, sem pressupor antecipadamente superioridade do PREEMPT\_RT.
+O trabalho estará concluído quando o protocolo tiver sido implementado e validado, as quatro condições tiverem resultados válidos ou falhas explicitamente documentadas, e a análise relacionar a cauda das respostas ao atendimento das ofertas. O resultado esperado é caracterizar o ganho adicional, a ausência de ganho ou o custo de PREEMPT\_RT para uma tarefa que já utiliza SCHED\_FIFO, relacionando a cauda dos tempos de resposta e as falhas ao requisito escolhido, sem pressupor antecipadamente superioridade de um kernel.
 
 \begin{thebibliography}{9}
 \bibitem{rt-theory} The Linux Kernel Documentation. \emph{Real-time preemption: theory of operation}. Disponível em: \url{https://docs.kernel.org/core-api/real-time/theory.html}.
-\bibitem{eevdf} The Linux Kernel Documentation. \emph{EEVDF Scheduler}. Disponível em: \url{https://docs.kernel.org/scheduler/sched-eevdf.html}.
 \bibitem{stressng} Colin Ian King. \emph{stress-ng: manual e código-fonte}. Disponível em: \url{https://github.com/ColinIanKing/stress-ng/blob/master/stress-ng.1}. A versão efetivamente utilizada deverá ser registrada no experimento.
 \end{thebibliography}
 \end{document}
-
-
