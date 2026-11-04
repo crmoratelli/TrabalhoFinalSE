@@ -28,14 +28,18 @@
 \title{Avaliação de tempos de resposta e cumprimento de deadlines em Linux convencional e PREEMPT\_RT\\[0.4em]\large Proposta de trabalho e protocolo experimental}
 \author{Disciplina de Sistemas Embarcados}
 \date{26 de outubro de 2026}
+
+
 \begin{document}
+
 \maketitle
+
 \begin{abstract}
 Este trabalho propõe comparar o atendimento de solicitações externas em uma Raspberry Pi executando Linux sem PREEMPT\_RT e Linux com PREEMPT\_RT. Um ESP32 oferece solicitações periódicas, sinaliza aquelas admitidas por GPIO e mede o intervalo até a resposta da Raspberry, após uma computação de tamanho fixo. O benchmark será executado com as políticas SCHED\_OTHER e SCHED\_FIFO, sob interferência de CPU e memória produzida pelo stress-ng. O protocolo contém seis execuções principais: quatro combinações de kernel e política sob interferência e duas referências FIFO sem carga adicional. A análise utilizará CCDFs empíricas, percentis, máximo observado e falhas de atendimento ao deadline. O estudo terá caráter exploratório e não estabelecerá garantias formais de pior caso.
 \end{abstract}
-\setcounter{tocdepth}{1}
-{\small\setlength{\parskip}{0pt}\tableofcontents}
-\newpage
+%\setcounter{tocdepth}{1}
+%{\small\setlength{\parskip}{0pt}\tableofcontents}
+%\newpage
 
 \section{Problema e delimitação}
 Sistemas embarcados que utilizam Linux podem precisar atender eventos externos dentro de um prazo, mesmo durante a execução de outras aplicações. Uma baixa latência média não implica que todos os atendimentos terminem no prazo: atrasos raros podem ser determinantes para a aplicação.
