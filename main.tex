@@ -113,11 +113,30 @@ GND & Referência elétrica comum entre as placas. \\
 Utilizar sinais compatíveis com 3,3 V e registrar os modelos exatos das placas, pinos e esquema de ligação. O caminho de GPIO deve ser o mesmo nos dois kernels, pela interface de dispositivo de caracteres do Linux, usando a ABI GPIO v2 diretamente na aplicação de benchmark. Os mecanismos de solicitação de linhas, captura de eventos e buffers serão documentados.
 
 \subsection{Computação da Raspberry}
-O processo aguarda uma transição de REQ, executa uma computação com número fixo de operações e atualiza ACK. Propõe-se um filtro FIR com coeficientes e amostras previamente alocados. O número de amostras e coeficientes será escolhido no piloto, visando inicialmente algumas dezenas de microssegundos de processamento na placa utilizada.
 
-O tamanho será calibrado uma única vez e mantido em todas as condições; não será recalibrado por kernel. O resultado deverá contribuir para um checksum ou saída observável, impedindo eliminação da computação pelo compilador. A implementação deve evitar comportamento indefinido e usar as mesmas opções de otimização.
+Será utilizada uma aplicação em C com uma única thread de atendimento, escalonada por SCHED_FIFO. A thread permanece bloqueada aguardando um evento de GPIO gerado pela interrupção de entrada REQ. Ao receber o evento, executa um filtro FIR com número fixo de operações e atualiza ACK para o nível recebido em REQ. Essa transição sinaliza a conclusão e pode gerar
+uma interrupção no ESP32. A computação é executada em espaço de usuário, não dentro do tratador de interrupção do kernel.
 
-Não usar sleep, espera ocupada baseada em relógio ou laço de duração variável como substituto da computação. Não alocar memória, imprimir mensagens ou escrever arquivos no caminho crítico. As páginas de memória serão previamente tocadas e bloqueadas com mlockall, verificando o sucesso da operação.
+O período de oferta será $T=10$ ms e o deadline relativo de resposta será $D=10$ ms. A carga computacional nominal será de aproximadamente $C=600\,\mu\mathrm{s}$ de tempo de CPU por solicitação, correspondendo a
+
+\begin{equation}
+    U_{\mathrm{FIR}} =
+    \frac{C}{T} =
+    \frac{0{,}6\,\mathrm{ms}}{5\,\mathrm{ms}} =
+    0{,}12.
+\end{equation}
+
+Os 12\% referem-se à utilização nominal de um núcleo apenas pelo FIR. O custo de GPIO, IRQs, chamadas de sistema e instrumentação pode elevar a utilização total.
+
+No piloto, em um único kernel de referência e sem stress-ng, a quantidade
+de rodadas do FIR será calibrada para aproximadamente
+$600\,\mu\mathrm{s}$ de tempo de CPU, com tolerância de $\pm5\%$.
+As dimensões obtidas serão mantidas nas quatro execuções, sem
+recalibração por kernel ou sob interferência.
+
+Durante o atendimento GPIO, será executada a quantidade fixa de operações
+calibrada, sem espera baseada no relógio. O tempo completo entre REQ e ACK
+deverá atender ao deadline de 10 ms, verificado pelo ESP32.
 
 \section{Modelo temporal e protocolo de associação}
 \subsection{Período, deadline e oferta}
