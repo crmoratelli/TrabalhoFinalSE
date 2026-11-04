@@ -25,7 +25,7 @@
 \newcolumntype{Y}{>{\raggedright\arraybackslash}X}
 \lstset{basicstyle=\ttfamily\small,breaklines=true,frame=single,columns=fullflexible,keepspaces=true,showstringspaces=false}
 \newcommand{\us}{\ensuremath{\,\mu\mathrm{s}}}
-\title{Avaliação de tempos de resposta e cumprimento de deadlines com SCHED\_FIFO em Linux convencional e PREEMPT\_RT\\[0.4em]\large Proposta de trabalho e protocolo experimental}
+\title{Avaliação de tempos de resposta e cumprimento de deadlines com SCHED\_FIFO em Linux convencional e PREEMPT\_RT\\[0.4em]\large TRABALHO FINAL 2026/2}
 \author{Disciplina de Sistemas Embarcados}
 \date{4 de novembro de 2026}
 
@@ -258,82 +258,78 @@ Usar eixo horizontal em microssegundos e eixo vertical logarítmico. Desenhar a 
 
 Calcular mediana, p99, p99,9 e máximo observado somente para respostas válidas, informando o denominador. Se houver poucas respostas, qualificar a instabilidade dos percentis extremos. O máximo observado não é WCET e ausência de falhas não prova probabilidade de falha nula.
 
-\section{Análise, resultados esperados e apresentação}
-\subsection{Figuras e tabela de resultados}
-Serão produzidos:
+\section{Análise dos resultados}
+
+O relatório deverá apresentar:
+
 \begin{enumerate}
-\item \textbf{CCDF sem stress}: curvas E1 e E2, comparando os kernels com a tarefa em SCHED\_FIFO.
-\item \textbf{CCDF com stress}: curvas E3 e E4, comparando os kernels sob interferência de CPU e memória.
-\item \textbf{Tabela das quatro execuções}: ofertas, respostas, mediana, p99, p99,9, máximo observado, atrasos, recusas por ocupação, censura e taxa global de falha.
-\item \textbf{Diagnóstico temporal}: temperatura, frequência, flags de throttling e jitter do gerador, na granularidade disponível.
+\item \textbf{CCDF sem stress}: curvas E1 e E2, comparando os kernels
+com a tarefa em SCHED\_FIFO.
+\item \textbf{CCDF com stress}: curvas E3 e E4, comparando os kernels
+sob interferência de CPU e memória.
+\item \textbf{Tabela comparativa}: para cada execução, apresentar
+quantidade de ofertas e respostas, mediana, p99, p99,9, máximo
+observado, perdas de deadline e recusas por ocupação.
 \end{enumerate}
 
-Manter as mesmas escalas nos dois gráficos, unidades e linha vertical no deadline. Identificar claramente curvas condicionadas a respostas. Investigar se uma curva aparentemente favorável decorre de muitas recusas ou respostas ausentes.
+A CCDF (\emph{Complementary Cumulative Distribution Function})
+representa a probabilidade de uma variável exceder determinado valor:
+$\overline{F}(x)=P(R>x)=1-F(x)$~\cite{ccdf}.
+Neste trabalho, ela mostrará a proporção das respostas medidas cujo
+tempo ultrapassa cada valor do eixo horizontal.
 
-\subsection{Comparações principais}
-Os contrastes de kernel são E1/E2 e E3/E4; os contrastes de interferência são E1/E3 e E2/E4. Discutir diferenças absolutas em microssegundos e impacto no atendimento ao deadline. Para p99,9, por exemplo, comparar descritivamente os incrementos
-\begin{equation}
- \Delta_{\mathrm{semRT}}=q_{0{,}999}^{\mathrm{E3}}-q_{0{,}999}^{\mathrm{E1}},
- \qquad
- \Delta_{\mathrm{RT}}=q_{0{,}999}^{\mathrm{E4}}-q_{0{,}999}^{\mathrm{E2}},
-\end{equation}
-onde $q_{0{,}999}^{\mathrm{Ej}}$ é o percentil p99,9 das respostas observadas na execução Ej. Incrementos menores indicam menor degradação observada sob carga, mas a ausência de repetições impede uma estimativa robusta de sua variabilidade. Comparar também as taxas globais de falha, pois percentis condicionados podem ocultar solicitações recusadas ou sem resposta.
+Os gráficos deverão utilizar tempo de resposta no eixo horizontal,
+probabilidade em escala logarítmica no eixo vertical e uma linha
+indicando o deadline de 10 ms. Utilizar as mesmas escalas para
+facilitar a comparação. Informar separadamente solicitações sem
+resposta e ofertas recusadas, pois elas não integram a CCDF
+das respostas medidas.
 
-\subsection{Resultado esperado e interpretações alternativas}
-A expectativa é que PREEMPT\_RT reduza principalmente a cauda dos tempos de resposta e a degradação sob interferência. Não se pressupõe redução da mediana em todas as condições: o tratamento de interrupções em threads e outros mecanismos podem acrescentar overhead ao caminho típico e, ao mesmo tempo, reduzir atrasos extremos.
+A discussão deverá comparar os tempos de resposta e o cumprimento
+do deadline, avaliando o efeito de PREEMPT\_RT e da interferência.
+A expectativa de redução dos atrasos extremos deverá ser confrontada
+com os resultados, mesmo que não sejam observadas diferenças
+relevantes entre os kernels.
 
-\begin{center}
-\begin{tabularx}{\textwidth}{lYY}
-\toprule
-Aspecto & FIFO sem PREEMPT\_RT & FIFO com PREEMPT\_RT \\
-\midrule
-Sem stress & Respostas geralmente rápidas; possíveis picos. & Mediana possivelmente próxima; expectativa de menor cauda. \\
-Com stress & Possível crescimento dos atrasos extremos. & Expectativa de menor degradação dos atrasos extremos. \\
-Deadline & Falhas dependem de $D$ e da interferência. & Possível redução das falhas quando o cenário as produzir. \\
-\bottomrule
-\end{tabularx}
-\end{center}
+\section{Entrega e apresentação}
 
-Essas expectativas são hipóteses, não resultados antecipados. Se ambos os kernels atenderem a todas as ofertas no prazo, a conclusão será que, nas condições observadas, FIFO sem PREEMPT\_RT já foi suficiente para o requisito adotado. Ainda poderá haver diferença na cauda. Se não houver diferença relevante, ou se PREEMPT\_RT apresentar desempenho inferior, relatar e discutir o resultado com base na instrumentação, no caminho de IRQ e na carga utilizada.
+A entrega será composta por um \textbf{relatório} e uma
+\textbf{apresentação na data definida para a atividade}.
 
-Não alterar o deadline após observar os resultados para produzir uma separação entre kernels. Análises exploratórias com outros limites poderão ser apresentadas como complementares, mantendo o deadline principal escolhido no piloto.
+O relatório deverá descrever a montagem, as configurações utilizadas,
+o procedimento experimental e os resultados, incluindo
+obrigatoriamente as CCDFs e a tabela comparativa das quatro execuções.
 
-\section{Limitações e ameaças à validade}
-\begin{itemize}
-\item \textbf{Uma execução por condição:} não há estimativa de variabilidade entre execuções; os contrastes são descritivos. Um milhão de eventos não equivale a um milhão de repetições independentes.
-\item \textbf{Dependência temporal:} amostras consecutivas podem ser correlacionadas. Não aplicar testes ou intervalos que pressuponham independência sem justificativa.
-\item \textbf{Instrumentação:} captura por software no ESP32 acrescenta jitter; armazenamento e exportação podem perturbar o gerador.
-\item \textbf{Admissão limitada:} descarte por ocupação altera os estímulos efetivamente emitidos durante sobrecarga. As conclusões se referem a essa política de atendimento.
-\item \textbf{Caminho completo:} resultados incluem GPIO, driver, IRQ, despertar, computação e resposta; não isolam apenas escalonamento.
-\item \textbf{Plataforma:} frequência, temperatura, memória compartilhada, firmware e diferenças entre builds podem afetar as caudas.
-\item \textbf{Generalização:} uma placa, um perfil de stress, um período e um processamento não caracterizam todas as aplicações embarcadas.
-\end{itemize}
+Na apresentação, o grupo deverá explicar o experimento, discutir
+os resultados e \textbf{demonstrar o sistema em funcionamento},
+mostrando a comunicação entre ESP32 e Raspberry Pi e o processamento
+das solicitações.
 
-Não atribuir causalidade exclusiva ao kernel quando houver diferenças relevantes não controladas. Não apresentar o estudo como prova de garantia de tempo real rígido.
+\subsection{Controle de versão com Git}
 
-\section{Etapas e entregáveis}
-\begin{center}
-\begin{tabularx}{\textwidth}{lY}
-\toprule
-Etapa & Produto verificável \\
-\midrule
-Preparação & Dois kernels funcionais, inventário da plataforma e configuração arquivada. \\
-Implementação & Firmware ESP32, aplicação de atendimento e protocolo REQ/ACK. \\
-Piloto & Medição validada; período, deadline, processamento, prioridade e stress congelados. \\
-Campanha & Quatro execuções documentadas e arquivos brutos íntegros. \\
-Análise & Scripts, CCDFs, tabela comparativa e discussão das limitações. \\
-Relatório & Método reprodutível, resultados observados e resposta à pergunta de pesquisa. \\
-\bottomrule
-\end{tabularx}
-\end{center}
+O grupo deverá utilizar um repositório Git para controlar o código-fonte, as configurações, os scripts de análise e os dados utilizados nos gráficos. Realizar commits ao longo do desenvolvimento e identificar a versão utilizada nos experimentos.
 
-A entrega deverá incluir código-fonte, comandos e metadados, esquema de ligação, configurações dos kernels, dados brutos, scripts de análise e relatório final. O leitor deve conseguir reconstruir cada curva a partir dos registros exportados.
-
-\section{Critérios de conclusão}
-O trabalho estará concluído quando o protocolo tiver sido implementado e validado, as quatro condições tiverem resultados válidos ou falhas explicitamente documentadas, e a análise relacionar a cauda das respostas ao atendimento das ofertas. O resultado esperado é caracterizar o ganho adicional, a ausência de ganho ou o custo de PREEMPT\_RT para uma tarefa que já utiliza SCHED\_FIFO, relacionando a cauda dos tempos de resposta e as falhas ao requisito escolhido, sem pressupor antecipadamente superioridade de um kernel.
+O endereço do repositório devera constar no relatório. Os arquivos e comandos necessários para reproduzir os gráficos e tabelas deverão estar documentados no repositório.
 
 \begin{thebibliography}{9}
-\bibitem{rt-theory} The Linux Kernel Documentation. \emph{Real-time preemption: theory of operation}. Disponível em: \url{https://docs.kernel.org/core-api/real-time/theory.html}.
-\bibitem{stressng} Colin Ian King. \emph{stress-ng: manual e código-fonte}. Disponível em: \url{https://github.com/ColinIanKing/stress-ng/blob/master/stress-ng.1}. A versão efetivamente utilizada deverá ser registrada no experimento.
+
+\bibitem{rt-theory}
+The Linux Kernel Documentation.
+\emph{Real-time preemption: theory of operation}.
+Disponível em:
+\url{https://docs.kernel.org/core-api/real-time/theory.html}.
+
+\bibitem{stressng}
+Colin Ian King.
+\emph{stress-ng: manual e código-fonte}.
+Disponível em:
+\url{https://github.com/ColinIanKing/stress-ng/blob/master/stress-ng.1}.
+
+\bibitem{ccdf}
+Stan Development Team.
+\emph{Stan Functions Reference: Cumulative Distribution Functions}.
+Disponível em:
+\url{https://mc-stan.org/docs/2_24/functions-reference/cumulative-distribution-functions.html}.
+
 \end{thebibliography}
 \end{document}
