@@ -90,7 +90,7 @@ SCHED\_FIFO atribui precedência à tarefa sobre aplicações da classe normal q
 
 A prioridade FIFO inicial proposta é 40. Ela será confirmada no piloto após inspeção das prioridades das threads de IRQ do GPIO no PREEMPT\_RT. A prioridade e a afinidade da aplicação e sua relação com as IRQs serão documentadas. A prioridade final da aplicação será idêntica nas quatro execuções e ficará congelada antes da coleta principal.
 
-A aplicação deverá conferir se a política e a afinidade foram aplicadas à \emph{thread de atendimento}, registrar falhas e abortar se a configuração não corresponder ao tratamento. A tarefa deverá bloquear aguardando o GPIO; não será usado polling contínuo.
+A aplicação deverá conferir se a política e a afinidade foram aplicadas ao \emph{processo de atendimento}, registrar falhas e abortar se a configuração não corresponder ao tratamento. A tarefa deverá bloquear aguardando o GPIO; não será usado polling contínuo.
 
 \section{Arquitetura e processamento}
 \subsection{Componentes e ligações}
@@ -105,7 +105,7 @@ Raspberry Pi & Aguardar evento GPIO, executar processamento e sinalizar conclus�
 REQ & Saída do ESP32 conectada à entrada GPIO da Raspberry. \\
 ACK & Saída da Raspberry conectada à entrada GPIO do ESP32. \\
 GND & Referência elétrica comum entre as placas. \\
-Analisador lógico & Validação opcional dos intervalos entre transições de REQ e ACK. \\
+%Analisador lógico & Validação opcional dos intervalos entre transições de REQ e ACK. \\
 \bottomrule
 \end{tabularx}
 \end{center}
@@ -113,7 +113,7 @@ Analisador lógico & Validação opcional dos intervalos entre transições de R
 Utilizar sinais compatíveis com 3,3 V e registrar os modelos exatos das placas, pinos e esquema de ligação. O caminho de GPIO deve ser o mesmo nos dois kernels, pela interface de dispositivo de caracteres do Linux, usando a ABI GPIO v2 diretamente na aplicação de benchmark. Os mecanismos de solicitação de linhas, captura de eventos e buffers serão documentados.
 
 \subsection{Computação da Raspberry}
-A thread aguarda uma transição de REQ, executa uma computação com número fixo de operações e atualiza ACK. Propõe-se um filtro FIR com coeficientes e amostras previamente alocados. O número de amostras e coeficientes será escolhido no piloto, visando inicialmente algumas dezenas de microssegundos de processamento na placa utilizada.
+O processo aguarda uma transição de REQ, executa uma computação com número fixo de operações e atualiza ACK. Propõe-se um filtro FIR com coeficientes e amostras previamente alocados. O número de amostras e coeficientes será escolhido no piloto, visando inicialmente algumas dezenas de microssegundos de processamento na placa utilizada.
 
 O tamanho será calibrado uma única vez e mantido em todas as condições; não será recalibrado por kernel. O resultado deverá contribuir para um checksum ou saída observável, impedindo eliminação da computação pelo compilador. A implementação deve evitar comportamento indefinido e usar as mesmas opções de otimização.
 
