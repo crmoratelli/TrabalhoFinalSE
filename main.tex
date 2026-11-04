@@ -133,6 +133,8 @@ As dimensões obtidas serão mantidas nas quatro execuções, sem recalibração
 
 Durante o atendimento GPIO, será executada a quantidade fixa de operações calibrada, sem espera baseada no relógio. O tempo completo entre REQ e ACK deverá atender ao deadline de 10 ms, verificado pelo ESP32. 
 
+A implementação da aplicação a ser executa na RPI esta em: \url{https://github.com/crmoratelli/rpi_benchmark.git}
+
 \section{Modelo temporal e protocolo de associação}
 
 \subsection{Período, deadline e oferta}
@@ -293,17 +295,11 @@ relevantes entre os kernels.
 
 \section{Entrega e apresentação}
 
-A entrega será composta por um \textbf{relatório} e uma
-\textbf{apresentação na data definida para a atividade}.
+A entrega será composta por um \textbf{relatório} e uma \textbf{apresentação na data definida para a atividade}.
 
-O relatório deverá descrever a montagem, as configurações utilizadas,
-o procedimento experimental e os resultados, incluindo
-obrigatoriamente as CCDFs e a tabela comparativa das quatro execuções.
+O relatório deverá descrever a montagem, as configurações utilizadas, o procedimento experimental e os resultados, incluindo obrigatoriamente as CCDFs e a tabela comparativa das quatro execuções.
 
-Na apresentação, o grupo deverá explicar o experimento, discutir
-os resultados e \textbf{demonstrar o sistema em funcionamento},
-mostrando a comunicação entre ESP32 e Raspberry Pi e o processamento
-das solicitações.
+Na apresentação, o grupo deverá explicar o experimento, discutir os resultados e \textbf{demonstrar o sistema em funcionamento}, mostrando a comunicação entre ESP32 e Raspberry Pi e o processamento das solicitações.
 
 \subsection{Controle de versão com Git}
 
