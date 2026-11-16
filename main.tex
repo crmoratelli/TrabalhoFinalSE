@@ -96,60 +96,33 @@ houvesse mudado.
 Foram adicionadas configurações próprias na pasta \texttt{configs/} e fragmentos
 em \texttt{custom-scripts/}. O fragmento convencional seleciona preempção
 voluntária; o RT seleciona \texttt{CONFIG\_PREEMPT\_RT=y}. Ambos habilitam a
-interface GPIO de caracteres e temporizadores de alta resolução. Cada saída
-terá seu próprio diretório, preservando o build ARM32 existente. A preparação
-dos arquivos não significa que as imagens ARM64 já foram compiladas ou testadas.
+interface GPIO de caracteres e temporizadores de alta resolução. A compilação
+será feita no diretório de saída padrão, substituindo os artefatos ARM32. A
+preparação dos arquivos não significa que as imagens ARM64 já foram compiladas
+ou testadas.
 
 Executar os comandos a seguir dentro de \texttt{buildroot-2026.08.1}:
 \begin{lstlisting}
-# ARM64 convencional (E1 e E3)
-make O="$PWD/output-arm64-nonrt" \
-  rpi3_benchmark_arm64_nonrt_defconfig
-make O="$PWD/output-arm64-nonrt" -j"$(nproc)"
-
-# ARM64 PREEMPT_RT (E2 e E4)
-make O="$PWD/output-arm64-rt" \
-  rpi3_benchmark_arm64_rt_defconfig
-make O="$PWD/output-arm64-rt" -j"$(nproc)"
+make clean &&
+make rpi3_benchmark_arm64_nonrt_defconfig &&
+make
 \end{lstlisting}
 
-Cada imagem de cartão estará em \texttt{images/sdcard.img} dentro da saída
-correspondente. A base \texttt{raspberrypi3\_64\_defconfig} seleciona o DTB da
+A imagem convencional estará em \path{output/images/sdcard.img}. Para gerar a
+variante RT, usar a mesma sequência substituindo a configuração por
+\texttt{rpi3\_benchmark\_arm64\_rt\_defconfig}. Antes de limpar e recompilar,
+arquivar a imagem e as configurações da variante anterior. A base \texttt{raspberrypi3\_64\_defconfig} seleciona o DTB da
 3B+ e a configuração de firmware com \texttt{arm\_64bit=1}. As duas variantes
 usam o mesmo toolchain AArch64. Não reutilizar os objetos compilados do build
 ARM32. Antes da coleta, arquivar as configurações finais e conferir
 \texttt{CONFIG\_PREEMPT\_RT=y} somente no kernel RT; registrar a preempção
 voluntária na variante convencional e confirmar \texttt{uname -m} na placa.
 
-\subsection{Habilitação do stress-ng e integração do benchmark}
+\subsection{stress-ng e benchmark}
 
-As configurações próprias já incluem \texttt{BR2\_PACKAGE\_STRESS\_NG=y}.
-Para habilitar manualmente em outra configuração, executar
-\texttt{make menuconfig}, acessar \emph{Target packages}, depois
-\emph{Debugging, profiling and benchmark}, e selecionar \emph{stress-ng}.
-Para uma saída separada, usar \texttt{make O="diretorio-da-saida" menuconfig}.
-Depois recompilar a imagem com \texttt{make}, usando o mesmo diretório de saída.
-Não é necessário limpar toda a árvore para acrescentar esse pacote.
-
-A integração usa a opção \texttt{BR2\_ROOTFS\_POST\_BUILD\_SCRIPT}, preservando
-primeiro o script da placa e depois executando o personalizado:
-\begin{lstlisting}
-# ARM32 existente
-BR2_ROOTFS_POST_BUILD_SCRIPT="board/raspberrypi3/post-build.sh custom-scripts/post-build.sh"
-
-# ARM64, nas duas novas configuracoes
-BR2_ROOTFS_POST_BUILD_SCRIPT="board/raspberrypi3-64/post-build.sh custom-scripts/post-build.sh"
-BR2_PACKAGE_STRESS_NG=y
-\end{lstlisting}
-
-O script personalizado compila o benchmark com o compilador do alvo e instala
-\path{/usr/bin/benchmark}. Também mantém a instalação dos scripts de anúncio
-de IP já previstos nessa integração; seu estado deverá ser controlado durante
-a campanha. Para atualizar a imagem ARM32 existente com as opções já aplicadas:
-\begin{lstlisting}
-make olddefconfig
-make -j"$(nproc)"
-\end{lstlisting}
+O stress-ng já foi adicionado a esta configuração pela ativação da flag
+\texttt{BR2\_PACKAGE\_STRESS\_NG=y}. O benchmark está integrado à geração da
+imagem pelo script de pós-compilação e será instalado em \path{/usr/bin/benchmark}.
 
 \subsection{Headers GPIO v2 e verificação na placa}
 
