@@ -103,14 +103,12 @@ dos arquivos não significa que as imagens ARM64 já foram compiladas ou testada
 Executar os comandos a seguir dentro de \texttt{buildroot-2026.08.1}:
 \begin{lstlisting}
 # ARM64 convencional (E1 e E3)
-make O="$PWD/output-arm64-nonrt" \
-  rpi3_benchmark_arm64_nonrt_defconfig
-make O="$PWD/output-arm64-nonrt" -j"$(nproc)"
+make rpi3_benchmark_arm64_nonrt_defconfig
+make 
 
 # ARM64 PREEMPT_RT (E2 e E4)
-make O="$PWD/output-arm64-rt" \
-  rpi3_benchmark_arm64_rt_defconfig
-make O="$PWD/output-arm64-rt" -j"$(nproc)"
+make rpi3_benchmark_arm64_rt_defconfig
+make
 \end{lstlisting}
 
 Cada imagem de cartão estará em \texttt{images/sdcard.img} dentro da saída
