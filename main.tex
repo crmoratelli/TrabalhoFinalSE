@@ -1,4 +1,4 @@
-% Compilacao: pdflatex proposta_benchmark_preempt_rt.tex (duas vezes).
+% Compilacao: pdflatex main.tex (duas vezes).
 % Arquivo autocontido; nao requer imagens externas nem BibTeX.
 \documentclass[11pt,a4paper]{article}
 \usepackage[utf8]{inputenc}
@@ -82,6 +82,104 @@ PREEMPT\_RT modifica mecanismos como travas e tratamento de interrupções, perm
 
 %Se não for possível utilizar a mesma versão-base, a diferença deverá ser explicitada como fator de confusão. Devem ser arquivados os arquivos de configuração dos kernels e suas versões completas.
 
+
+\subsection{Preparação do Buildroot e imagens ARM64}
+
+A placa utilizada será a Raspberry Pi 3B+. A configuração já compilada usa ARM
+32 bits e kernel Raspberry Pi 6.12.61. Nesta árvore, a opção
+\texttt{CONFIG\_PREEMPT\_RT} depende de \texttt{CONFIG\_ARCH\_SUPPORTS\_RT},
+selecionada por ARM64, mas não por ARM32. Para a campanha, serão preparadas
+\textbf{as duas imagens em ARM64}, a partir da mesma base. Não comparar uma
+imagem ARM32 convencional com outra ARM64 RT como se somente a preempção
+houvesse mudado.
+
+Foram adicionadas configurações próprias na pasta \texttt{configs/} e fragmentos
+em \texttt{custom-scripts/}. O fragmento convencional seleciona preempção
+voluntária; o RT seleciona \texttt{CONFIG\_PREEMPT\_RT=y}. Ambos habilitam a
+interface GPIO de caracteres e temporizadores de alta resolução. Cada saída
+terá seu próprio diretório, preservando o build ARM32 existente. A preparação
+dos arquivos não significa que as imagens ARM64 já foram compiladas ou testadas.
+
+Executar os comandos a seguir dentro de \texttt{buildroot-2026.08.1}:
+\begin{lstlisting}
+# ARM64 convencional (E1 e E3)
+make O="$PWD/output-arm64-nonrt" \
+  rpi3_benchmark_arm64_nonrt_defconfig
+make O="$PWD/output-arm64-nonrt" -j"$(nproc)"
+
+# ARM64 PREEMPT_RT (E2 e E4)
+make O="$PWD/output-arm64-rt" \
+  rpi3_benchmark_arm64_rt_defconfig
+make O="$PWD/output-arm64-rt" -j"$(nproc)"
+\end{lstlisting}
+
+Cada imagem de cartão estará em \texttt{images/sdcard.img} dentro da saída
+correspondente. A base \texttt{raspberrypi3\_64\_defconfig} seleciona o DTB da
+3B+ e a configuração de firmware com \texttt{arm\_64bit=1}. As duas variantes
+usam o mesmo toolchain AArch64. Não reutilizar os objetos compilados do build
+ARM32. Antes da coleta, arquivar as configurações finais e conferir
+\texttt{CONFIG\_PREEMPT\_RT=y} somente no kernel RT; registrar a preempção
+voluntária na variante convencional e confirmar \texttt{uname -m} na placa.
+
+\subsection{Habilitação do stress-ng e integração do benchmark}
+
+As configurações próprias já incluem \texttt{BR2\_PACKAGE\_STRESS\_NG=y}.
+Para habilitar manualmente em outra configuração, executar
+\texttt{make menuconfig}, acessar \emph{Target packages}, depois
+\emph{Debugging, profiling and benchmark}, e selecionar \emph{stress-ng}.
+Para uma saída separada, usar \texttt{make O="diretorio-da-saida" menuconfig}.
+Depois recompilar a imagem com \texttt{make}, usando o mesmo diretório de saída.
+Não é necessário limpar toda a árvore para acrescentar esse pacote.
+
+A integração usa a opção \texttt{BR2\_ROOTFS\_POST\_BUILD\_SCRIPT}, preservando
+primeiro o script da placa e depois executando o personalizado:
+\begin{lstlisting}
+# ARM32 existente
+BR2_ROOTFS_POST_BUILD_SCRIPT="board/raspberrypi3/post-build.sh custom-scripts/post-build.sh"
+
+# ARM64, nas duas novas configuracoes
+BR2_ROOTFS_POST_BUILD_SCRIPT="board/raspberrypi3-64/post-build.sh custom-scripts/post-build.sh"
+BR2_PACKAGE_STRESS_NG=y
+\end{lstlisting}
+
+O script personalizado compila o benchmark com o compilador do alvo e instala
+\path{/usr/bin/benchmark}. Também mantém a instalação dos scripts de anúncio
+de IP já previstos nessa integração; seu estado deverá ser controlado durante
+a campanha. Para atualizar a imagem ARM32 existente com as opções já aplicadas:
+\begin{lstlisting}
+make olddefconfig
+make -j"$(nproc)"
+\end{lstlisting}
+
+\subsection{Headers GPIO v2 e verificação na placa}
+
+O kernel selecionado oferece GPIO v2, mas o toolchain externo estável usa
+headers Linux 5.4 sem as definições dessa ABI. Alterar apenas o kernel não
+atualiza os headers de compilação da biblioteca C. O post-build verifica a
+presença de \texttt{GPIO\_V2\_GET\_LINE\_IOCTL}. Quando ausente, exporta os
+headers UAPI do kernel selecionado por \texttt{make headers\_install} e fornece
+somente o \texttt{linux/gpio.h} exportado à compilação do benchmark. O sysroot,
+os demais headers e a biblioteca C do toolchain permanecem preservados.
+
+Essa solução foi validada por compilação cruzada ARM32 e geração completa da
+imagem existente, com benchmark e stress-ng confirmados no sistema de arquivos
+produzido. A compilação ARM64 e a operação elétrica precisam ser
+validadas nas respectivas imagens e na placa. Depois do boot, conferir:
+\begin{lstlisting}
+uname -a
+uname -m
+ls -l /dev/gpiochip*
+command -v benchmark
+stress-ng --version
+chrt -p $$
+\end{lstlisting}
+
+O acesso de operação será por telnet. Na configuração local inspecionada do
+BusyBox, o cliente está habilitado, enquanto \texttt{CONFIG\_TELNETD} está
+desabilitado. A configuração de telnet não foi alterada nesta etapa; validar
+na placa o servidor e seu modo de inicialização antes de depender desse acesso.
+O firmware do ESP32 será implementado em uma etapa posterior.
+
 \subsection{Política fixa: SCHED\_FIFO}
 
 A tarefa de atendimento usará exclusivamente SCHED\_FIFO nas quatro condições. A política de escalonamento deixa de ser um fator experimental: variam apenas a configuração de preempção do kernel e a presença de interferência.
@@ -117,7 +215,7 @@ Utilizar sinais compatíveis com 3,3 V e registrar os modelos exatos das placas,
 Será utilizada uma aplicação em C com uma única thread de atendimento, escalonada por SCHED\_FIFO. A thread permanece bloqueada aguardando um evento de GPIO gerado pela interrupção de entrada REQ. Ao receber o evento, executa um filtro FIR com número fixo de operações e atualiza ACK para o nível recebido em REQ. Essa transição sinaliza a conclusão e pode gerar
 uma interrupção no ESP32. A computação é executada em espaço de usuário, não dentro do tratador de interrupção do kernel.
 
-O período de oferta será $T=10$ ms e o deadline relativo de resposta será $D=10$ ms. A carga computacional nominal será de aproximadamente $C=600\,\mu\mathrm{s}$ de tempo de CPU por solicitação, correspondendo a
+O período de oferta será $T=10$ ms e o deadline relativo de resposta será $D=10$ ms. A carga computacional nominal será de aproximadamente $C=1{,}2\,\mathrm{ms}$ de tempo de CPU por solicitação, correspondendo a
 
 \begin{equation}
     U_{\mathrm{FIR}} =
@@ -128,12 +226,12 @@ O período de oferta será $T=10$ ms e o deadline relativo de resposta será $D=
 
 Os 12\% referem-se à utilização nominal de um núcleo apenas pelo FIR. O custo de GPIO, IRQs, chamadas de sistema e instrumentação pode elevar a utilização total.
 
-No piloto, em um único kernel de referência e sem stress-ng, a quantidade de rodadas do FIR será calibrada para aproximadamente $1.2 ms$ de tempo de CPU, com tolerância de $\pm5\%$.
+No piloto, em um único kernel de referência e sem stress-ng, a quantidade de rodadas do FIR será calibrada para aproximadamente $1{,}2\,\mathrm{ms}$ de tempo de CPU, com tolerância de $\pm5\%$.
 As dimensões obtidas serão mantidas nas quatro execuções, sem recalibração por kernel ou sob interferência.
 
 Durante o atendimento GPIO, será executada a quantidade fixa de operações calibrada, sem espera baseada no relógio. O tempo completo entre REQ e ACK deverá atender ao deadline de 10 ms, verificado pelo ESP32. 
 
-A implementação da aplicação a ser executa na RPI esta em: \url{https://github.com/crmoratelli/rpi_benchmark.git}
+A implementação da aplicação a ser executada na Raspberry Pi está em: \url{https://github.com/crmoratelli/rpi_benchmark.git}
 
 \section{Modelo temporal e protocolo de associação}
 
@@ -141,13 +239,12 @@ A implementação da aplicação a ser executa na RPI esta em: \url{https://gith
 
 O período será $T=10$ ms e o deadline relativo será $D=10$ ms, contado a partir da solicitação efetivamente emitida.
 
-%Como $D>T$, uma resposta recebida entre 5 e 10 ms pode cumprir o deadline da própria solicitação e, ainda assim, provocar recusa da oferta seguinte por ocupação. Atrasos de solicitações admitidas e recusas de novas ofertas serão apresentados separadamente.
 
 O ESP32 manterá instantes de oferta definidos por
 \begin{equation}
  a_i=a_0+iT,\qquad i=0,\ldots,N-1,
 \end{equation}
-com período $T$ e deadline relativo $D=T$. %Os valores iniciais propostos são $T=1$ ms e $D=500\us$. 
+com período $T=10$ ms e deadline relativo $D=T=10$ ms.
 O piloto deverá confirmar sua adequação ao propósito da aplicação simulada. Os valores finais serão fixados antes das quatro execuções.
 
 A thread da Raspberry é \textbf{acionada por eventos}; não é uma tarefa que acorda periodicamente para consultar uma entrada. A periodicidade pertence ao calendário de oferta do ESP32.
@@ -193,10 +290,10 @@ Exemplo para uma placa com quatro núcleos e RAM suficiente:
 \begin{lstlisting}
 chrt -o 0 stress-ng --cpu 4 --cpu-method sqrt \
   --vm 1 --vm-bytes 256M --vm-keep \
-  --timeout 20m --metrics-brief
+  --timeout 70m --metrics-brief
 \end{lstlisting}
 
-O comando é uma configuração inicial e força a política normal para o stress-ng; executá-lo a partir de uma sessão com nice 0 e afinidade adequada. Confirmar flags na versão instalada, permissões, RAM disponível e ausência de swapping no piloto. O tamanho de 256 MiB será ajustado se necessário e congelado. A carga deve começar antes da janela medida e continuar até seu término; o timeout precisa cobrir aquecimento, coleta e janela final.
+O comando é uma configuração inicial e força a política normal para o stress-ng; executá-lo a partir de uma sessão com nice 0 e afinidade adequada. Confirmar flags na versão instalada, permissões, RAM disponível e ausência de swapping no piloto. O tamanho de 256 MiB será ajustado se necessário e congelado. A carga deve começar antes da janela medida e continuar até seu término; o timeout precisa cobrir aquecimento de 30 s, coleta de 1 h e janela final de 1 s. O exemplo de 70 min reserva margem de inicialização; confirmar que a carga permaneceu ativa durante toda a medição.
 
 Fixar a thread de atendimento em um núcleo previamente escolhido. Permitir que os workers do stress-ng executem em todos os núcleos, incluindo esse núcleo, com um worker de CPU por núcleo disponível. Não isolar o núcleo crítico da carga neste estudo. Registrar afinidade de IRQs e threads; manter a mesma política de afinidade entre tratamentos, documentando diferenças próprias do PREEMPT\_RT.
 
@@ -218,7 +315,7 @@ E4 & Com PREEMPT\_RT & SCHED\_FIFO & CPU + memória \\
 
 O desenho cruza dois fatores, kernel e interferência, com dois níveis cada. Há uma execução principal por condição. E1/E2 comparam os kernels sem carga adicional; E3/E4 comparam os kernels sob interferência; E1/E3 e E2/E4 mostram o efeito da carga em cada kernel. A política e a prioridade da tarefa são constantes em toda a campanha.
 
-Propõe-se $N=10^6$ ofertas por execução. Para $T=1$ ms, cada janela de oferta dura aproximadamente 16 minutos e 40 segundos, totalizando cerca de 66 minutos e 40 segundos de coleta principal, além de aquecimento, inicialização e troca de kernel. O número de respostas válidas pode ser menor que $N$.
+Serão realizadas $N=360\,000$ ofertas por execução. Para $T=10$ ms, a janela de coleta principal será de 1 hora por condição, totalizando 4 horas nas quatro condições, além de aquecimento, janela final, inicialização e troca de kernel. O número de respostas válidas pode ser menor que $N$; ofertas recusadas também contam nesse total e não se deve prolongar a coleta para completar um número de respostas.
 
 Aquecimento proposto: 30 s com o perfil correspondente já ativo. Sortear previamente a ordem das quatro condições e registrar o resultado; os IDs não determinam a ordem. Ensaios curtos de configuração, calibração e depuração pertencem ao piloto e não integram as quatro execuções principais.
 
